@@ -321,6 +321,8 @@ async function openChapter(chapterId, options = {}) {
   _segCache = new Map();
   segments = [];           // clear immediately so stale segments can't be played
   currentChapterId = chapterId;
+  const qaLink = document.getElementById('qa-link');
+  if (qaLink) qaLink.href = `/qa/${BOOK_ID}?chapter=${chapterId}`;
   currentSegIdx    = 0;
   const voiceStudioLink = document.getElementById('voice-studio-link');
   if (voiceStudioLink) {

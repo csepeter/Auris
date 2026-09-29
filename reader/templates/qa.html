@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Ellenőrzés — {{ book.title }} — Auris{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/qa.css">{% endblock %}
+{% block content %}
+<main class="qa-page">
+  <header class="qa-header">
+    <a href="/reader/{{ book.id }}" class="btn btn-sm btn-ghost">&#8592; Vissza az olvasóhoz</a>
+    <div>
+      <p class="qa-eyebrow">Minőségellenőrzés</p>
+      <h1>{{ book.title }}</h1>
+      <p class="qa-intro">A program beszédfelismeréssel visszahallgatja az elkészült hangot, összeveti a szöveggel, és megjelöli a hibás, levágott, túl gyors vagy túl halk részeket. A hibás mondatokhoz új változat kérhető, a jó változat kiválasztható és jóváhagyható.</p>
+    </div>
+  </header>
+
+  <section class="qa-controls" aria-label="Ellenőrzés beállításai">
+    <label class="qa-field">Fejezet
+      <select id="qa-chapter" class="select-input">
+        {% for chapter in chapters %}<option value="{{ chapter.id }}">{{ loop.index }}. {{ chapter.title }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="checkbox-label"><input type="checkbox" id="qa-asr" checked> Beszédfelismerés (Whisper)</label>
+    <label class="checkbox-label"><input type="checkbox" id="qa-regenerate" checked> Hibás mondatok automatikus újragenerálása</label>
+    <button id="qa-start" class="btn btn-primary" type="button">Fejezet ellenőrzése</button>
+    <button id="qa-loudness" class="btn btn-ghost" type="button">Hangerő-jelentés</button>
+  </section>
+  <p id="qa-status" class="qa-status" role="status" aria-live="polite"></p>
+  <div class="qa-progress hidden" id="qa-progress"><div id="qa-progress-bar"></div></div>
+
+  <section id="qa-summary" class="qa-summary" aria-label="Összesítés"></section>
+  <section id="qa-loudness-report" class="qa-loudness hidden" aria-label="Hangerő-jelentés"></section>
+
+  <div class="qa-filter" role="group" aria-label="Szűrés">
+    <button class="btn btn-sm btn-ghost is-active" data-filter="problems" type="button">Hibás és gyanús</button>
+    <button class="btn btn-sm btn-ghost" data-filter="all" type="button">Mind</button>
+    <button class="btn btn-sm btn-ghost" data-filter="unapproved" type="button">Jóváhagyásra vár</button>
+  </div>
+  <section id="qa-list" class="qa-list" aria-label="Szakaszok"></section>
+</main>
+<audio id="qa-audio" class="hidden"></audio>
+{% endblock %}
+{% block scripts %}
+<script>window.BOOK_ID = {{ book.id }}; window.BOOK_LANGUAGE = {{ (book.language or '')|tojson }};</script>
+<script src="/static/js/qa.js"></script>
+{% endblock %}

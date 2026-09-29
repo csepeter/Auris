@@ -60,6 +60,8 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
         done = 0
         # 1) Each chapter is written to its own PCM file (bounded memory).
         pieces = []  # (path, frames, [(segment, start_frame, end_frame)], title)
+        trim = e._export_option('trim_segment_silence', True)
+        room_tone = e._export_option('export_room_tone', False)
         for ci, chapter in enumerate(chapters_data):
             segments = chapter.get('segments') or []
             if not segments:
@@ -73,21 +75,27 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
                     path = segment.get('audio_path')
                     if not path or not Path(path).is_file():
                         raise ValueError('Hiányzó mondathang. Generáld újra a fejezetet.')
+                    if si == 0 and ci == 0 and room_tone:
+                        head = e.silence(int(e.SAMPLE_RATE * e.ROOM_TONE_HEAD_SEC), True, 1)
+                        out.write(head)
+                        cursor += len(head)
                     seg_start = cursor
                     with sf.SoundFile(path) as source:
                         if source.samplerate != e.SAMPLE_RATE or not len(source):
                             raise ValueError('Érvénytelen mondathang vagy mintavételi frekvencia.')
-                        for block in source.blocks(blocksize=65536, dtype='float32', always_2d=True):
-                            out.write(block.mean(axis=1))
-                            cursor += len(block)
+                    audio = e.read_segment_audio(path, trim=trim)
+                    out.write(audio)
+                    cursor += len(audio)
                     local.append((segment, seg_start, cursor))
+                    last_of_book = ci + 1 == len(chapters_data) and si + 1 == len(segments)
                     pause = (e.pause_after_segment(segment, segments[si + 1])
                              if si + 1 < len(segments) else
-                             e.CHAPTER_GAP_SEC if ci + 1 < len(chapters_data) else 0)
-                    silence = round(pause * e.SAMPLE_RATE)
-                    if silence:
-                        out.write(np.zeros(silence, dtype='float32'))
-                        cursor += silence
+                             e.CHAPTER_GAP_SEC if ci + 1 < len(chapters_data) else
+                             e.ROOM_TONE_TAIL_SEC if room_tone and last_of_book else 0)
+                    gap = e.silence(round(pause * e.SAMPLE_RATE), room_tone, done + 2)
+                    if len(gap):
+                        out.write(gap)
+                        cursor += len(gap)
                     done += 1
             pieces.append([piece, cursor, local,
                            chapter.get('chapter_title') or f'Fejezet {ci + 1}'])

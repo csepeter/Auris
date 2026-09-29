@@ -19,6 +19,7 @@
         <a href="#higgs">Higgs TTS 3</a>
         <a href="#more-engines">MOSS, Supertonic, Piper</a>
         <a href="#engine-lifecycle">Motor és beállítások</a>
+        <a href="#quality">Minőségellenőrzés</a>
         <a href="#export">Export és gyorsítótár</a>
         <a href="#storage">Tárhely és mentés</a>
         <a href="#versioning">Verzió és frissítés</a>
@@ -926,6 +927,47 @@ ffprobe -version</code></pre>
             <code>Ctrl+C</code>-vel, futtasd újra a <code>.\run.bat</code>-ot,
             majd a böngészőben nyomj <code>Ctrl+F5</code>-öt.
           </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="docs-section" id="quality">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">QA</span>
+        <div>
+          <h2>Minőségellenőrzés</h2>
+          <p>Az olvasó bal oldali sávjának <strong>Ellenőrzés</strong> gombja a kiválasztott fejezet ellenőrzőoldalát nyitja meg.</p>
+        </div>
+      </div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Mit vizsgál?</h3>
+          <ul class="docs-check-list">
+            <li><strong>Beszédfelismerés:</strong> a Whisper visszahallgatja a mondatot, és a <strong>karakterhiba-arány (CER)</strong> megmutatja, mennyire tér el attól, aminek el kellett hangzania. A számokat kimondott alakban veti össze, az írásjeleket és a kis-nagybetűt nem számolja, az ékezeteket igen (<em>kor</em> ≠ <em>kór</em>). A könyv szereplőneveit is megkapja, hogy a nevek ne számítsanak hibának.</li>
+            <li><strong>Hangjelek:</strong> túlvezérlés, 1,5 s-nál hosszabb szünet a mondaton belül, néma hang, a szöveghez képest túl gyors (levágott) vagy túl lassú (elnyújtott) felolvasás, illetve a fejezet többi mondatához képest szokatlan hossz.</li>
+            <li>Állapot: <strong>Rendben</strong>; <strong>Gyanús</strong> 8% CER felett vagy hangjelzésnél; <strong>Hibás</strong> 15% CER felett vagy néma hangnál. A küszöb a Beállítások → Minőségellenőrzés alatt módosítható.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Javítás</h3>
+          <ol class="docs-number-list">
+            <li>A <strong>Fejezet ellenőrzése</strong> előbb elkészíti a hiányzó hangokat, majd ellenőriz. A folyamat a Feladatok oldalon is látszik és leállítható.</li>
+            <li>Bekapcsolt <strong>automatikus újragenerálásnál</strong> a hibás mondatból legfeljebb három új változat készül, és a legkisebb hibájút választja ki. Ha mindegyik hibás, a legjobb marad, jelölve.</li>
+            <li>Az <strong>Új változat</strong> gomb kézzel kér még egyet. A változatok egymás után meghallgathatók, és bármelyik kiválasztható (<strong>Ezt használom</strong>); a lejátszás és az export a kiválasztottat használja.</li>
+            <li>A <strong>Jóváhagyás</strong> jelzi, hogy a mondatot meghallgattad. A <strong>Jóváhagyásra vár</strong> szűrő a még ellenőrizetlen mondatokat mutatja.</li>
+          </ol>
+          <p>Új változatot az OmniVoice, a Higgs és a két MOSS motor tud adni; a Supertonic és a Piper ugyanarra a szövegre mindig ugyanazt a hangot adja.</p>
+        </div>
+      </div>
+      <h3>Hangerő-jelentés</h3>
+      <p>A <strong>Hangerő-jelentés</strong> a fejezet teljes hangját méri a mastering előtt és után: átlagos hangerő (RMS), csúcs, zajszint, EBU R128 integrált hangosság és true peak, valamint az ACX-követelmények teljesülése (RMS −23 és −18 dB között, csúcs legfeljebb −3 dB, zajszint legfeljebb −60 dB, legfeljebb 120 perc). Az ACX mesterséges hangot nem fogad el; a jelentés csak technikai mérce.</p>
+      <h3>Egyenletes szünetek és szobazaj</h3>
+      <p>Exportkor az Auris levágja a beszédmotorok által a mondatok elején és végén hagyott eltérő hosszú csendet, így a szünetek hosszát csak a mondat-, bekezdés-, párbeszéd- és fejezetszabály határozza meg. A felirat időzítése a levágott hangot követi. A <strong>Szobazaj a szünetekben</strong> beállítás a teljes csend helyett −68 dB-es szobazajt tesz a szünetekbe, a fájl elejére 0,6, a végére 2 másodpercet.</p>
+      <div class="docs-callout">
+        <span class="docs-callout-icon" aria-hidden="true">⌁</span>
+        <div>
+          <strong>Saját mérés (2026. szeptember, RTX 3090):</strong>
+          <p>Öt magyar szakasz OmniVoice-hangjának teljes ellenőrzése beszédfelismeréssel, a modell első betöltésével együtt 16 s alatt futott le; a CER 0–1,6% volt. Ugyanazt a magyar mondatot (számokkal és rövidítéssel) a motorok ennyi CER-rel mondták: Supertonic 0–0,7%, Piper 3,7–5,9%, MOSS-TTS 1.5 1,5–17%, MOSS-TTS-Nano 26–34%. Ez egyetlen mondaton mért érthetőség, nem hallás utáni minőségértékelés.</p>
         </div>
       </div>
     </section>

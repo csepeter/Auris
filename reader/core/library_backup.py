@@ -209,7 +209,7 @@ def restore_backup(archive, destination, *, confirm=False):
                         "SELECT name FROM sqlite_master WHERE type='table'"
                     )
                 }
-                for operational in ("jobs", "chapter_analysis_state"):
+                for operational in ("jobs", "chapter_analysis_state", "segment_qa", "segment_takes"):
                     if operational in tables:
                         conn.execute("DELETE FROM " + operational)
                 for table in reversed(TABLES):

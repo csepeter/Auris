@@ -172,6 +172,15 @@ async function loadSettings() {
     _settings.audio_mastering !== false;
   const anchor = document.getElementById('voice-design-anchor');
   if (anchor) anchor.checked = _settings.voice_design_anchor !== false;
+  const setChecked = (id, value) => { const el = document.getElementById(id); if (el) el.checked = value; };
+  setChecked('trim-segment-silence', _settings.trim_segment_silence !== false);
+  setChecked('export-room-tone', Boolean(_settings.export_room_tone));
+  setChecked('asr-keep-loaded', Boolean(_settings.asr_keep_loaded));
+  const setNumber = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+  setNumber('qa-cer-warn', Math.round((_settings.qa_cer_warn ?? 0.08) * 100));
+  setNumber('qa-cer-fail', Math.round((_settings.qa_cer_fail ?? 0.15) * 100));
+  setNumber('qa-max-takes', _settings.qa_max_takes ?? 3);
+  setNumber('asr-model', _settings.asr_model || '');
 
   refreshAccelStatus();
 
@@ -667,6 +676,13 @@ async function saveSettingsValues() {
     subtitle_format:   document.getElementById('subtitle-format').value,
     audio_mastering:   document.getElementById('audio-mastering').checked,
     voice_design_anchor: document.getElementById('voice-design-anchor')?.checked !== false,
+    trim_segment_silence: document.getElementById('trim-segment-silence')?.checked !== false,
+    export_room_tone: Boolean(document.getElementById('export-room-tone')?.checked),
+    asr_keep_loaded: Boolean(document.getElementById('asr-keep-loaded')?.checked),
+    qa_cer_warn: (parseFloat(document.getElementById('qa-cer-warn')?.value || '8') || 0) / 100,
+    qa_cer_fail: (parseFloat(document.getElementById('qa-cer-fail')?.value || '15') || 15) / 100,
+    qa_max_takes: parseInt(document.getElementById('qa-max-takes')?.value || '3', 10),
+    asr_model: (document.getElementById('asr-model')?.value || '').trim(),
     piper_voice:      document.getElementById('piper-voice')?.value || 'anna',
     supertonic_voice: document.getElementById('supertonic-voice')?.value || 'F1',
     supertonic_steps: parseInt(document.getElementById('supertonic-steps')?.value || '10', 10),

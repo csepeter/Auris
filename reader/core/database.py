@@ -294,3 +294,6 @@ def init_db():
             'CREATE INDEX IF NOT EXISTS idx_segments_cache_key ON tts_segments(cache_key)'
         )
         conn.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
+
+    from core.qa_api import ensure_tables
+    ensure_tables()

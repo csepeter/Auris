@@ -457,6 +457,24 @@
     </div>
   </section>
 
+  <!-- Quality control -->
+  <section class="settings-section">
+    <div class="settings-section-title">Minőségellenőrzés</div>
+    <p class="section-desc">Az olvasó <strong>Ellenőrzés</strong> gombjával nyíló oldal beszédfelismeréssel visszahallgatja a hangot. Magyar könyvhöz a <code>sarpba/whisper-hu-large-v3-turbo-finetuned</code> (MIT, ~1,6 GB videomemória), más nyelvhez az <code>openai/whisper-large-v3-turbo</code> modellt használja; első használatkor letöltődik.</p>
+    <div class="setting-row setting-grid-3">
+      <label>Gyanús, ha a hibaarány eléri (%)<input type="number" id="qa-cer-warn" class="text-input" min="0" max="100" step="1"></label>
+      <label>Hibás, ha a hibaarány eléri (%)<input type="number" id="qa-cer-fail" class="text-input" min="1" max="100" step="1"></label>
+      <label>Legfeljebb ennyi új változat mondatonként<input type="number" id="qa-max-takes" class="text-input" min="0" max="8" step="1"></label>
+    </div>
+    <div class="setting-row">
+      <label>Saját beszédfelismerő modell (Hugging Face; üresen az alapértelmezett)</label>
+      <input type="text" id="asr-model" class="text-input" placeholder="pl. openai/whisper-large-v3-turbo">
+    </div>
+    <div class="setting-row">
+      <label class="checkbox-label"><input type="checkbox" id="asr-keep-loaded">A beszédfelismerő maradjon betöltve ellenőrzés után</label>
+    </div>
+  </section>
+
   <!-- Shared output defaults -->
   <section class="settings-section">
     <div class="settings-section-title">Kimeneti alapértékek</div>
@@ -464,6 +482,16 @@
       <label class="checkbox-label">
         <input type="checkbox" id="audio-mastering">Export hangjának utófeldolgozása</label>
       <span class="muted" style="font-size:.78rem">Az FFmpeg fejezetenként finom hangszínszabályozást, kompressziót és kétmenetes hangerő-kiegyenlítést végez: −19 LUFS, 9 LU LRA és −3 dB true peak.</span>
+    </div>
+    <div class="setting-row">
+      <label class="checkbox-label">
+        <input type="checkbox" id="trim-segment-silence">Mondatszéli csend levágása exportkor</label>
+      <span class="muted" style="font-size:.78rem">A beszédmotorok a mondatok elején és végén eltérő hosszú csendet hagynak. Bekapcsolva ezt az Auris levágja, így a mondat-, bekezdés- és párbeszédszünetek hossza egyenletes.</span>
+    </div>
+    <div class="setting-row">
+      <label class="checkbox-label">
+        <input type="checkbox" id="export-room-tone">Szobazaj a szünetekben (ACX)</label>
+      <span class="muted" style="font-size:.78rem">A teljes csend helyett nagyon halk (−68 dB) szobazaj kerül a szünetekbe, a fájl elejére 0,6 s, a végére 2 s. Hangoskönyv-kiadók technikai követelményeihez hasznos.</span>
     </div>
     <div class="setting-row">
       <label class="checkbox-label">

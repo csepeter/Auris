@@ -514,11 +514,14 @@ class HiggsTTSEngine:
         speed: float,
         language: str | None,
         normalize_text: bool,
+        seed_override: int | None = None,
     ) -> np.ndarray:
         if not self._ready or self._worker is None:
             raise RuntimeError("Higgs TTS is not loaded. " + (self._error or "Load it first."))
         settings = self._generation_settings()
         seed = settings.pop("seed")
+        if seed_override is not None:
+            seed = seed_override
         reference_path = ref_audio
         reference_key = None
         if ref_audio:
@@ -566,6 +569,7 @@ class HiggsTTSEngine:
         num_step: int | None = None,
         language: str | None = None,
         normalize_text: bool | None = None,
+        take: int = 0,
     ) -> dict:
         if normalize_text is None:
             normalize_text = bool(_setting("normalize_text", True))
@@ -578,6 +582,8 @@ class HiggsTTSEngine:
             language=language,
             normalize_text=bool(normalize_text),
         )
+        if take:
+            key = hashlib.md5(f"{key}|take={int(take)}".encode("utf-8")).hexdigest()
         path = self.cache_path(key)
         if os.path.exists(path):
             duration = _audio_duration(path)
@@ -588,7 +594,8 @@ class HiggsTTSEngine:
                 "cache_key": key,
             }
         audio = self._synthesize(
-            text, instruct, ref_audio, ref_text, speed, language, bool(normalize_text)
+            text, instruct, ref_audio, ref_text, speed, language, bool(normalize_text),
+            seed_override=((int(take) * 7919 + 17) % (2**31 - 1)) if take else None,
         )
         sample_rate = self._sample_rate
         _write_audio_atomic(path, audio, sample_rate)

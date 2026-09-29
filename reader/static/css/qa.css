@@ -1,0 +1,60 @@
+/* Quality-control page */
+.qa-page { max-width: 1040px; margin: 0 auto; padding: 32px 24px 80px; }
+.qa-header { display: flex; gap: 24px; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 20px; }
+.qa-eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .74rem; color: var(--accent); margin: 0 0 4px; font-weight: 700; }
+.qa-header h1 { margin: 0 0 6px; font-size: 1.7rem; }
+.qa-intro { margin: 0; color: var(--text2); line-height: 1.55; max-width: 70ch; }
+.qa-controls { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; margin-bottom: 12px; }
+.qa-field { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; color: var(--text2); min-width: 240px; }
+.qa-status { min-height: 1.4em; color: var(--text2); margin: 6px 0; }
+.qa-status.is-error, .is-error { color: #e57373; }
+.qa-status.is-ok { color: #6ec890; }
+.qa-progress { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 14px; }
+.qa-progress div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.qa-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 18px 0; }
+.qa-stat { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.qa-stat-value { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.qa-stat-label { font-size: .8rem; color: var(--text2); }
+.qa-stat-fail .qa-stat-value { color: #e57373; }
+.qa-stat-warn .qa-stat-value { color: #e0b050; }
+.qa-stat-ok .qa-stat-value { color: #6ec890; }
+.qa-filter { display: flex; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap; }
+.qa-filter .is-active { border-color: var(--accent); color: var(--accent); }
+.qa-list { display: flex; flex-direction: column; gap: 12px; }
+.qa-empty { color: var(--text2); }
+.qa-item { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.qa-item.qa-fail { border-left-color: #e57373; }
+.qa-item.qa-warn { border-left-color: #e0b050; }
+.qa-item.qa-ok { border-left-color: #6ec890; }
+.qa-item.is-approved { opacity: .8; }
+.qa-item-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .8rem; }
+.qa-badge { border-radius: 999px; padding: 2px 9px; font-size: .74rem; border: 1px solid currentColor; }
+.qa-badge-fail { color: #e57373; }
+.qa-badge-warn { color: #e0b050; }
+.qa-badge-ok { color: #6ec890; }
+.qa-badge-unchecked { color: var(--text2); }
+.qa-index, .qa-cer { color: var(--text2); font-variant-numeric: tabular-nums; }
+.qa-speaker { color: var(--accent); }
+.qa-flag { background: color-mix(in srgb, #e0b050 18%, transparent); border-radius: 6px; padding: 2px 7px; }
+.qa-text { margin: 10px 0 6px; line-height: 1.55; }
+.qa-heard { margin: 0 0 8px; color: var(--text2); font-size: .9rem; line-height: 1.5; }
+.qa-heard span { font-weight: 600; }
+.qa-wave { width: 100%; height: 40px; color: var(--accent); display: block; margin: 6px 0; opacity: .85; }
+.qa-actions, .qa-takes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.qa-take { display: inline-flex; gap: 4px; align-items: center; border: 1px dashed var(--border); border-radius: 8px; padding: 2px 4px; }
+.qa-take.is-selected { border-style: solid; border-color: var(--accent); }
+.qa-take-current { font-size: .75rem; color: var(--accent); padding: 0 6px; }
+.qa-loudness { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 10px 0 20px; }
+.qa-loudness-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+.qa-loudness-card h3 { margin: 0 0 8px; font-size: 1rem; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.qa-loudness-card table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.qa-loudness-card td { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.qa-loudness-card td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; padding-right: 10px; }
+.qa-pass { color: #6ec890; }
+.qa-failmark { color: #e57373; }
+.qa-note { grid-column: 1 / -1; color: var(--text2); font-size: .82rem; margin: 0; }
+@media (max-width: 640px) {
+  .qa-page { padding: 20px 16px 60px; }
+  .qa-header { flex-direction: column; gap: 12px; }
+  .qa-field { min-width: 100%; }
+}

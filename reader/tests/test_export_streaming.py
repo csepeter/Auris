@@ -60,3 +60,32 @@ class StreamingExportTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SilenceHandlingTest(unittest.TestCase):
+    def test_trim_edges_removes_model_silence_but_keeps_margin(self):
+        sr = exporter.SAMPLE_RATE
+        speech = (np.sin(np.arange(sr) / 5) * 0.3).astype('float32')
+        audio = np.concatenate([np.zeros(sr), speech, np.zeros(sr // 2)])
+        trimmed = exporter.trim_edges(audio)
+        self.assertLess(len(trimmed), len(speech) + int(sr * 0.1))
+        self.assertGreaterEqual(len(trimmed), len(speech))
+
+    def test_room_tone_is_quiet_but_not_digital_silence(self):
+        tone = exporter.silence(24000, room_tone=True)
+        rms_db = 20 * np.log10(np.sqrt(np.mean(tone ** 2)))
+        self.assertAlmostEqual(rms_db, exporter.ROOM_TONE_DB, delta=0.5)
+        self.assertFalse(np.any(exporter.silence(100)))
+
+    def test_subtitle_times_follow_trimmed_audio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sr = exporter.SAMPLE_RATE
+            path = os.path.join(tmp, 's.wav')
+            speech = (np.sin(np.arange(sr) / 5) * 0.3).astype('float32')
+            sf.write(path, np.concatenate([np.zeros(sr), speech, np.zeros(sr)]), sr)
+            timeline = [{'audio_path': path, 'duration_sec': 3.0, 'text': 'a'},
+                        {'audio_path': path, 'duration_sec': 3.0, 'text': 'b'}]
+            exporter._write_merged_wav(timeline, os.path.join(tmp, 'out.wav'))
+        first, second = timeline
+        self.assertLess(first['t_end'] - first['t_start'], 1.2)
+        self.assertAlmostEqual(second['t_start'] - first['t_end'], exporter.DEFAULT_SEGMENT_PAUSE_SEC, places=2)

@@ -296,6 +296,67 @@ def pause_after_segment(segment: dict, next_segment: dict | None = None) -> floa
     return DEFAULT_SEGMENT_PAUSE_SEC
 
 
+TRIM_THRESHOLD_DB = -50.0
+TRIM_KEEP_SEC = 0.04
+ROOM_TONE_DB = -68.0
+ROOM_TONE_HEAD_SEC = 0.6
+ROOM_TONE_TAIL_SEC = 2.0
+
+
+def _export_option(key: str, default: bool) -> bool:
+    try:
+        from core import settings
+
+        return bool(settings.get(key, default))
+    except Exception:
+        return default
+
+
+def trim_edges(audio: np.ndarray, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
+    """Remove the model's own leading/trailing silence, keeping a short margin.
+
+    Pauses between sentences then come only from ``pause_after_segment``,
+    so they are the same length whichever engine rendered the sentence.
+    """
+    audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+    if audio.size == 0:
+        return audio
+    frame = max(1, int(sample_rate * 0.01))
+    usable = audio.size // frame * frame
+    if usable == 0:
+        return audio
+    rms = np.sqrt(np.mean(audio[:usable].reshape(-1, frame) ** 2, axis=1))
+    loud = np.flatnonzero(rms > 10 ** (TRIM_THRESHOLD_DB / 20))
+    if loud.size == 0:
+        return audio
+    keep = int(sample_rate * TRIM_KEEP_SEC)
+    start = max(0, loud[0] * frame - keep)
+    end = min(audio.size, (loud[-1] + 1) * frame + keep)
+    return audio[start:end]
+
+
+def silence(frames: int, room_tone: bool = False, seed: int = 0) -> np.ndarray:
+    """Digital silence, or very quiet room tone (ACX rejects dead silence)."""
+    frames = max(0, int(frames))
+    if not room_tone or frames == 0:
+        return np.zeros(frames, dtype=np.float32)
+    rng = np.random.default_rng(seed)
+    noise = rng.standard_normal(frames).astype(np.float32)
+    # Gentle low-pass so the tone sounds like a quiet room, not hiss.
+    kernel = np.ones(8, dtype=np.float32) / 8
+    noise = np.convolve(noise, kernel, mode='same')
+    noise /= max(float(np.sqrt(np.mean(noise ** 2))), 1e-9)
+    return (noise * 10 ** (ROOM_TONE_DB / 20)).astype(np.float32)
+
+
+def read_segment_audio(path: str, *, trim: bool) -> np.ndarray:
+    audio, sr = sf.read(path, dtype='float32', always_2d=True)
+    audio = audio.mean(axis=1)
+    if sr != SAMPLE_RATE:
+        raise ValueError('Érvénytelen mondathang vagy mintavételi frekvencia.')
+    return trim_edges(audio) if trim else audio
+
+
 def _export_workers() -> int:
     """Parallel FFmpeg chapter jobs; each already uses several threads."""
     return max(1, min(4, (os.cpu_count() or 2) // 2))
@@ -304,8 +365,11 @@ def _export_workers() -> int:
 def _write_merged_wav(segments: list[dict], path: str) -> float:
     """Stream segment audio and pauses into one 16-bit WAV; return seconds.
 
-    Equivalent to ``_merge_wavs`` without holding the chapter in memory.
+    Segments get their actual ``t_start``/``t_end`` written back, so subtitles
+    follow the trimmed audio exactly.
     """
+    trim = _export_option('trim_segment_silence', True)
+    room_tone = _export_option('export_room_tone', False)
     playable = [
         seg
         for seg in segments
@@ -317,19 +381,27 @@ def _write_merged_wav(segments: list[dict], path: str) -> float:
         if not playable:
             out.write(np.zeros(SAMPLE_RATE, dtype='float32'))
             return 1.0
+        if room_tone:
+            head = silence(int(SAMPLE_RATE * ROOM_TONE_HEAD_SEC), True, 1)
+            out.write(head)
+            frames += len(head)
         for idx, seg in enumerate(playable):
-            with sf.SoundFile(seg['audio_path']) as source:
-                for block in source.blocks(blocksize=65536, dtype='float32', always_2d=True):
-                    out.write(block.mean(axis=1))
-                    frames += len(block)
+            audio = read_segment_audio(seg['audio_path'], trim=trim)
+            seg['t_start'] = frames / SAMPLE_RATE
+            out.write(audio)
+            frames += len(audio)
+            seg['t_end'] = frames / SAMPLE_RATE
             if idx + 1 < len(playable) or seg.get('pause_ms') is not None:
                 pause = pause_after_segment(
                     seg, playable[idx + 1] if idx + 1 < len(playable) else None
                 )
-                silence = int(SAMPLE_RATE * pause)
-                if silence:
-                    out.write(np.zeros(silence, dtype='float32'))
-                    frames += silence
+                gap = silence(int(SAMPLE_RATE * pause), room_tone, idx + 2)
+                out.write(gap)
+                frames += len(gap)
+        if room_tone:
+            tail = silence(int(SAMPLE_RATE * ROOM_TONE_TAIL_SEC), True, 0)
+            out.write(tail)
+            frames += len(tail)
     return frames / SAMPLE_RATE
 
 
@@ -408,7 +480,8 @@ def export_single_chapter(
     output_dir = output_dir or _book_export_dir(book_author, book_title)
     os.makedirs(output_dir, exist_ok=True)
     safe_title = _safe_name(file_stem or chapter_title)
-    timeline = build_timeline(segments)
+    # Actual positions are written into the timeline while the WAV is built.
+    timeline = [dict(seg) for seg in build_timeline(segments)]
 
     wav_path = os.path.join(output_dir, f'{safe_title}.wav')
     mastering_applied = False

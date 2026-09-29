@@ -47,22 +47,22 @@ ENGINE_INFO: dict[str, dict] = {
     "omnivoice": {
         "label": "OmniVoice", "voice_clone": True, "voice_design": True,
         "speed": True, "device": "GPU/CPU", "hungarian": "hivatalos",
-        "license": "kód Apache-2.0, súlyok CC-BY-NC",
+        "license": "kód Apache-2.0, súlyok CC-BY-NC", "takes": True,
     },
     "higgs": {
         "label": "Higgs TTS 3 — 4B", "voice_clone": True, "voice_design": False,
         "speed": True, "device": "GPU", "hungarian": "hivatalos",
-        "license": "Boson kutatási licenc",
+        "license": "Boson kutatási licenc", "takes": True,
     },
     "moss_tts": {
         "label": "MOSS-TTS 1.5 (4B)", "voice_clone": True, "voice_design": False,
         "speed": False, "device": "GPU (~14 GB VRAM)", "hungarian": "hivatalos",
-        "license": "Apache-2.0",
+        "license": "Apache-2.0", "takes": True,
     },
     "moss_nano": {
         "label": "MOSS-TTS-Nano (CPU)", "voice_clone": True, "voice_design": False,
         "speed": False, "device": "CPU", "hungarian": "hivatalos",
-        "license": "Apache-2.0",
+        "license": "Apache-2.0", "takes": True,
     },
     "supertonic": {
         "label": "Supertonic 3 (CPU, előre beállított hangok)", "voice_clone": False,
@@ -305,11 +305,15 @@ class LocalEngineBase:
 
     def generate(self, text: str, instruct: str | None = None, ref_audio: str | None = None,
                  ref_text: str | None = None, speed: float = 1.0, num_step: int | None = None,
-                 language: str | None = None, normalize_text: bool | None = None) -> dict:
+                 language: str | None = None, normalize_text: bool | None = None,
+                 take: int = 0) -> dict:
         if normalize_text is None:
             normalize_text = bool(_setting("normalize_text", True))
         key = self.cache_key(text, instruct, ref_audio, speed, ref_text=ref_text,
                              language=language, normalize_text=bool(normalize_text))
+        if take:
+            key = hashlib.md5(f"{key}|take={int(take)}".encode("utf-8")).hexdigest()
+        self._take = int(take or 0)
         path = self.cache_path(key)
         if os.path.exists(path):
             return {"audio_path": path, "duration_sec": _audio_duration(path),
@@ -650,7 +654,7 @@ class MossNanoEngine(LocalEngineBase):
             result = self.model.synthesize(
                 text=text, prompt_audio_path=reference, output_audio_path=str(output),
                 enable_wetext=False, enable_normalize_tts_text=True, streaming=False,
-                seed=int(_setting("moss_seed", 1234)),
+                seed=int(_setting("moss_seed", 1234)) + 7919 * getattr(self, "_take", 0),
             )
         finally:
             output.unlink(missing_ok=True)
@@ -773,7 +777,7 @@ class MossTTSEngine(LocalEngineBase):
                 "temperature": float(_setting("moss_temperature", 1.7)),
                 "top_p": float(_setting("moss_top_p", 0.8)),
                 "top_k": int(_setting("moss_top_k", 25)),
-                "seed": int(_setting("moss_seed", 1234)),
+                "seed": int(_setting("moss_seed", 1234)) + 7919 * getattr(self, "_take", 0),
             })
             if not response.get("ok"):
                 raise RuntimeError(response.get("error") or "MOSS-TTS generation failed")

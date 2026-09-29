@@ -122,6 +122,15 @@ DEFAULTS: dict = {
     'audio_mastering': True,
     # Render voice descriptions once into an anchor clip, then clone it.
     'voice_design_anchor': True,
+    # Export: trim model silence at sentence edges; optional ACX room tone
+    'trim_segment_silence': True,
+    'export_room_tone': False,
+    # Quality control (core/qa.py): character error rate thresholds
+    'qa_cer_warn': 0.08,
+    'qa_cer_fail': 0.15,
+    'qa_max_takes': 3,
+    'asr_model': '',
+    'asr_keep_loaded': False,
     # Additional engines (core/local_engines.py)
     'piper_voice': 'anna',
     'supertonic_voice': 'F1',

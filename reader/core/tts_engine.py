@@ -612,6 +612,32 @@ def hungarian_normalizer_key(text: str, language: str | None, normalize_text: bo
     return ""
 
 
+def take_variant(variant: str, take: int) -> str:
+    """Cache-key variant of an alternative take; take 0 keeps the old key."""
+    take = int(take or 0)
+    if take <= 0:
+        return variant
+    return f"{variant}|take{take}" if variant else f"take{take}"
+
+
+def seed_for_take(take: int) -> int:
+    """Seed the samplers so each take is a different, repeatable version."""
+    seed = (int(take) * 7919 + 17) % (2**31 - 1)
+    try:
+        import random
+
+        import torch
+
+        random.seed(seed)
+        np.random.seed(seed % (2**32 - 1))
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+    return seed
+
+
 def _voice_design_anchor_enabled() -> bool:
     try:
         from core import settings as app_settings
@@ -1377,8 +1403,12 @@ class TTSEngine:
         num_step: int | None = None,
         language: str | None = None,
         normalize_text: bool | None = None,
+        take: int = 0,
     ) -> dict:
         """
+        ``take`` > 0 renders an alternative version of the same sentence
+        (a different random seed) under its own cache key; 0 is the default.
+
         Returns:
             {
                 audio_path: str,
@@ -1410,7 +1440,7 @@ class TTSEngine:
             language=language,
             normalize_text=normalize_text,
             num_step=num_step,
-            variant=self._render_variant,
+            variant=take_variant(self._render_variant, take),
         )
         path = self.cache_path(key)
 
@@ -1423,6 +1453,8 @@ class TTSEngine:
                 "cache_key": key,
             }
 
+        if take:
+            seed_for_take(take)
         audio = self._synthesize_audio(
             text=text,
             instruct=effective_instruct,

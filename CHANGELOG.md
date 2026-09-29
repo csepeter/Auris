@@ -12,6 +12,36 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- **Minőségellenőrzés** oldal (olvasó → Ellenőrzés): magyar Whisper-beszédfelismeréssel visszahallgatott mondatok, karakterhiba-arány (ékezetérzékenyen, a számok kimondott alakjával), valamint túlvezérlés, néma hang, hosszú szünet, túl gyors vagy túl lassú felolvasás és szokatlan hossz jelzése; hullámforma-előnézet, szűrők és összesítés.
+- Hibás mondatok automatikus újragenerálása legfeljebb három új változattal, a legkisebb hibájú kiválasztásával; kézi **Új változat**, változatok meghallgatása és kiválasztása, mondatonkénti **Jóváhagyás**.
+- Fejezetenkénti hangerő-jelentés mastering előtt és után: RMS, csúcs, zajszint, EBU R128 hangosság és ACX-megfelelés.
+- Opcionális szobazaj a szünetekben (ACX), a fájl elején és végén.
+- A Beállítások oldalon a minőségellenőrzés küszöbei, a változatok száma és a beszédfelismerő modell állíthatók.
+
+#### Változott
+
+- Exportkor a beszédmotorok mondatszéli csendje levágódik, így a szünetek hossza egyenletes; a felirat a levágott hangot követi.
+
+### English
+
+#### Added
+
+- **Quality control** page (reader → Ellenőrzés): sentences are re-heard with Hungarian Whisper speech recognition, with a character error rate (accent-sensitive, numbers in spoken form) and flags for clipping, silence, long pauses, too fast or too slow reading and unusual duration; waveform preview, filters and a summary.
+- Automatic regeneration of failing sentences with up to three alternative takes, keeping the one with the lowest error; manual **new take**, listening to and selecting takes, and per-sentence **approval**.
+- Per-chapter loudness report before and after mastering: RMS, peak, noise floor, EBU R128 loudness and ACX compliance.
+- Optional room tone in pauses (ACX), at the start and end of files.
+- Settings for quality-control thresholds, the number of takes and the speech-recognition model.
+
+#### Changed
+
+- Export trims the speech engines' silence at sentence edges so pauses have consistent lengths; subtitles follow the trimmed audio.
+
 ## [3.6.0] - 2026-09-29
 
 ### Magyar

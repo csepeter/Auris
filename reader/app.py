@@ -613,6 +613,13 @@ def _launch_durable_job_unlocked(stored: dict) -> bool:
             job_id, int(payload['book_id']), payload.get('audio_fmt', 'wav'),
             payload.get('sub_fmt', 'srt'), list(payload.get('chapter_numbers') or []),
         )
+    elif job_type == 'qa_chapter':
+        from core.qa_api import run_qa_job
+        target = run_qa_job
+        args = (
+            job_id, int(payload['book_id']), int(payload['chapter_id']),
+            bool(payload.get('asr', True)), bool(payload.get('auto_regenerate', True)),
+        )
     elif job_type == 'reanalyze':
         target = _run_reanalysis_job
         args = (job_id, int(payload['book_id']), list(payload['chapter_ids']))
@@ -3531,6 +3538,8 @@ def save_settings():
         'audio_mastering', 'voice_design_anchor',
         'piper_voice', 'supertonic_voice', 'supertonic_steps',
         'moss_seed', 'moss_temperature', 'moss_top_p', 'moss_top_k',
+        'trim_segment_silence', 'export_room_tone',
+        'qa_cer_warn', 'qa_cer_fail', 'qa_max_takes', 'asr_model', 'asr_keep_loaded',
         'tts_accel', 'tts_export_workers',
         'character_detection_mode', 'llm_provider',
         'llm_base_url', 'llm_api_key', 'llm_model',
@@ -3611,7 +3620,17 @@ def save_settings():
         updates['piper_voice'] = 'anna'
     if 'supertonic_voice' in updates and updates['supertonic_voice'] not in SUPERTONIC_VOICES:
         updates['supertonic_voice'] = 'F1'
+    for key in ('trim_segment_silence', 'export_room_tone', 'asr_keep_loaded'):
+        if key in updates:
+            updates[key] = bool(updates[key])
+    if 'asr_model' in updates:
+        model = str(updates['asr_model'] or '').strip()
+        if model and not security.valid_hf_repo(model):
+            return jsonify({'error': 'Érvénytelen Hugging Face repó-azonosító.'}), 400
+        updates['asr_model'] = model
     for key, low, high, cast in (
+        ('qa_cer_warn', 0.0, 1.0, float), ('qa_cer_fail', 0.01, 1.0, float),
+        ('qa_max_takes', 0, 8, int),
         ('supertonic_steps', 4, 32, int), ('moss_seed', -1, 2**31 - 1, int),
         ('moss_temperature', 0.1, 3.0, float), ('moss_top_p', 0.05, 1.0, float),
         ('moss_top_k', 1, 200, int),
@@ -3810,7 +3829,9 @@ def check_model_path():
 # ════════════════════════════════════════════════════════════════════════════
 
 from core.experience_api import bp as experience_blueprint
+from core.qa_api import bp as qa_blueprint
 app.register_blueprint(experience_blueprint)
+app.register_blueprint(qa_blueprint)
 
 if __name__ == '__main__':
     with app.app_context():
