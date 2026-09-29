@@ -108,6 +108,89 @@ function buildInstruct(gender, age, pitch, accent, originalInstruct = "") {
   return [gender, age, pitch, accent, ...extraParts].filter(Boolean).join(", ");
 }
 
+// Preset voices of engines that cannot clone or design a voice. The choice
+// is stored in the voice description as a "voice:<name>" token.
+const PRESET_VOICES = {
+  piper: [["anna", "Anna (női)"], ["berta", "Berta (női)"], ["imre", "Imre (férfi)"]],
+  supertonic: [
+    ["F1", "F1 (női)"], ["F2", "F2 (női)"], ["F3", "F3 (női)"], ["F4", "F4 (női)"], ["F5", "F5 (női)"],
+    ["M1", "M1 (férfi)"], ["M2", "M2 (férfi)"], ["M3", "M3 (férfi)"], ["M4", "M4 (férfi)"], ["M5", "M5 (férfi)"],
+  ],
+};
+const ENGINE_LABELS = {
+  omnivoice: "OmniVoice", higgs: "Higgs TTS 3", moss_tts: "MOSS-TTS 1.5",
+  moss_nano: "MOSS-TTS-Nano", supertonic: "Supertonic 3", piper: "Piper",
+};
+let activeEngine = { engine: "omnivoice", capabilities: { voice_clone: true, voice_design: true } };
+
+function presetVoiceOf(instruct) {
+  const match = String(instruct || "").match(/(?:^|,)\s*voice:\s*([\w-]+)/i);
+  return match ? match[1] : "";
+}
+
+function withPresetVoice(instruct, voice) {
+  const parts = String(instruct || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part && !/^voice:/i.test(part));
+  if (voice) parts.push(`voice:${voice}`);
+  return parts.join(", ");
+}
+
+function presetSelect(id, instruct, label) {
+  const presets = PRESET_VOICES[activeEngine.engine];
+  if (!presets) return "";
+  const current = presetVoiceOf(instruct);
+  return `<label class="preset-voice-label">Beépített hang (${esc(ENGINE_LABELS[activeEngine.engine] || "")})
+    <select class="vc-select" id="${esc(id)}" aria-label="${esc(label)}">
+      <option value="">Automatikus (a leírt nem alapján)</option>
+      ${presets.map(([value, text]) => `<option value="${esc(value)}"${value.toLowerCase() === current.toLowerCase() ? " selected" : ""}>${esc(text)}</option>`).join("")}
+    </select></label>`;
+}
+
+async function applyEngineCapabilities() {
+  try {
+    const status = await requestJson("/api/tts/status");
+    activeEngine = {
+      engine: status.engine || "omnivoice",
+      capabilities: status.capabilities || {},
+    };
+  } catch (_) {
+    return;
+  }
+  const caps = activeEngine.capabilities;
+  const body = studioDocument.body;
+  body.classList.toggle("engine-no-clone", caps.voice_clone === false);
+  body.classList.toggle("engine-no-design", caps.voice_design === false);
+  let note = studioDocument.getElementById("engine-voice-note");
+  if (!note) {
+    note = studioDocument.createElement("p");
+    note.id = "engine-voice-note";
+    note.className = "engine-voice-note";
+    studioDocument.querySelector(".studio-header")?.after(note);
+  }
+  const name = ENGINE_LABELS[activeEngine.engine] || activeEngine.engine;
+  if (caps.voice_clone === false) {
+    note.textContent = `A kiválasztott beszédmotor (${name}) nem támogat hangklónozást: beépített hangokkal dolgozik, a feltöltött referenciahangot figyelmen kívül hagyja. A hangot a „Beépített hang” mezőben vagy a nem kiválasztásával adhatod meg.`;
+  } else if (caps.voice_design === false) {
+    note.textContent = `A kiválasztott beszédmotor (${name}) hangklónozással dolgozik: saját hanghoz tölts fel referenciahangot. Referencia nélkül automatikus magyar mintahangot használ; a leírt életkor és hangmagasság nem hat.`;
+  } else {
+    note.textContent = "";
+  }
+  note.classList.toggle("hidden", !note.textContent);
+  const narratorPreset = presetSelect("narrator-preset-voice", narratorInstruct, "Narrátor beépített hangja");
+  const narratorControls = studioDocument.getElementById("narrator-accent")?.closest(".voice-controls");
+  studioDocument.getElementById("narrator-preset-wrap")?.remove();
+  if (narratorPreset && narratorControls) {
+    const wrap = studioDocument.createElement("div");
+    wrap.id = "narrator-preset-wrap";
+    wrap.className = "preset-voice-wrap";
+    wrap.innerHTML = narratorPreset;
+    narratorControls.after(wrap);
+    studioDocument.getElementById("narrator-preset-voice")?.addEventListener("change", updateNarratorPreview);
+  }
+}
+
 function filterCharacters(characters, query) {
   const needle = String(query || "").trim().toLocaleLowerCase("hu");
   if (!needle) return characters;
@@ -186,19 +269,23 @@ function updateInstructPreview(charId) {
     document.getElementById(`ac-${charId}`)?.value || "",
     originalInstruct,
   );
+  const preset = document.getElementById(`pv-${charId}`);
+  const final = preset ? withPresetVoice(instruct, preset.value) : instruct;
   const element = document.getElementById(`ins-${charId}`);
-  if (element) element.textContent = instruct;
-  return instruct;
+  if (element) element.textContent = final;
+  return final;
 }
 
 function getNarratorInstruct() {
-  return buildInstruct(
+  const instruct = buildInstruct(
     document.getElementById("narrator-gender")?.value || "male",
     document.getElementById("narrator-age")?.value || "middle-aged",
     document.getElementById("narrator-pitch")?.value || "low pitch",
     document.getElementById("narrator-accent")?.value || "",
     narratorInstruct,
   );
+  const preset = document.getElementById("narrator-preset-voice");
+  return preset ? withPresetVoice(instruct, preset.value) : instruct;
 }
 
 function updateNarratorPreview() {
@@ -341,6 +428,7 @@ function renderCharacters(characters, filterActive) {
         </div>
         <details class="technical-panel">
           <summary>Hang finomhangolása</summary>
+          ${presetSelect(`pv-${character.id}`, character.instruct, `${character.name} beépített hangja`)}
           <div class="voice-controls">
             ${buildSelect(GENDERS, voice.gender, `g-${character.id}`, `${character.name} hang neme`)}
             ${buildSelect(AGES, voice.age, `a-${character.id}`, `${character.name} életkora`)}
@@ -359,7 +447,7 @@ function renderCharacters(characters, filterActive) {
   }).join("");
 
   visible.forEach((character) => {
-    ["g", "a", "p", "ac"].forEach((prefix) => {
+    ["g", "a", "p", "ac", "pv"].forEach((prefix) => {
       document.getElementById(`${prefix}-${character.id}`)?.addEventListener(
         "change", () => updateInstructPreview(character.id),
       );
@@ -698,7 +786,10 @@ function initializeVoiceStudio() {
     const active = Boolean(document.getElementById("chapter-character-filter")?.checked && CURRENT_CHAPTER_ID);
     renderCharacters(loadedCharacters, active);
   });
-  loadProfiles().then(loadCharacters).catch((error) => showError("A hangprofilok betöltése sikertelen", error));
+  applyEngineCapabilities()
+    .then(loadProfiles)
+    .then(loadCharacters)
+    .catch((error) => showError("A hangprofilok betöltése sikertelen", error));
 }
 
 if (studioDocument) {
@@ -724,6 +815,8 @@ if (studioDocument) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    presetVoiceOf,
+    withPresetVoice,
     buildInstruct,
     filterCharacters,
     optionLabel,

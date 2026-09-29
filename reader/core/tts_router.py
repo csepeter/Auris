@@ -1,9 +1,11 @@
-"""Runtime selector that keeps OmniVoice and Higgs model lifecycles separate."""
+"""Runtime selector that keeps every TTS engine lifecycle separate."""
 
 from __future__ import annotations
 
 import threading
 import time
+
+ENGINE_NAMES = ("omnivoice", "higgs", "moss_tts", "moss_nano", "supertonic", "piper")
 
 
 def selected_engine_name() -> str:
@@ -13,7 +15,7 @@ def selected_engine_name() -> str:
         value = str(get("tts_engine", "omnivoice") or "omnivoice").lower()
     except Exception:
         value = "omnivoice"
-    return value if value in {"omnivoice", "higgs"} else "omnivoice"
+    return value if value in ENGINE_NAMES else "omnivoice"
 
 
 class TTSEngineRouter:
@@ -27,6 +29,10 @@ class TTSEngineRouter:
             from core.higgs_engine import HiggsTTSEngine
 
             return HiggsTTSEngine()
+        if name in ("moss_tts", "moss_nano", "supertonic", "piper"):
+            from core.local_engines import ENGINE_CLASSES
+
+            return ENGINE_CLASSES[name]()
         from core.tts_engine import TTSEngine
 
         engine = TTSEngine()
@@ -86,7 +92,17 @@ class TTSEngineRouter:
         self._select_if_needed()
         status = self._engine.status()
         status.setdefault("engine", self.engine_name)
+        if "capabilities" not in status:
+            from core.local_engines import ENGINE_INFO
+
+            status["capabilities"] = dict(ENGINE_INFO.get(self.engine_name, {}))
         return status
+
+    @property
+    def capabilities(self) -> dict:
+        from core.local_engines import ENGINE_INFO
+
+        return dict(ENGINE_INFO.get(self.engine_name, {}))
 
     def cancel(self) -> bool:
         cancel = getattr(self._engine, "cancel", None)

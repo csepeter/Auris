@@ -122,6 +122,14 @@ DEFAULTS: dict = {
     'audio_mastering': True,
     # Render voice descriptions once into an anchor clip, then clone it.
     'voice_design_anchor': True,
+    # Additional engines (core/local_engines.py)
+    'piper_voice': 'anna',
+    'supertonic_voice': 'F1',
+    'supertonic_steps': 10,
+    'moss_seed': 1234,
+    'moss_temperature': 1.7,
+    'moss_top_p': 0.8,
+    'moss_top_k': 25,
 
     # UI
     'theme': 'night',

@@ -12,6 +12,34 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- Négy új, magyarul hivatalosan beszélő helyi beszédmotor:
+  - **MOSS-TTS 1.5 (4B)**: Apache-2.0, GPU, hangklónozás, külön folyamatban, rögzített modellverzióval;
+  - **MOSS-TTS-Nano**: videokártya nélküli hangklónozás;
+  - **Supertonic 3**: CPU, tíz beépített hang, hangklónozás nélkül;
+  - **Piper**: Anna, Berta és Imre magyar hangja, hangklónozás nélkül; a GPL-es csomag a Beállítások oldalon külön telepíthető.
+- A motorválasztó alatt látszik, hogy a motor támogat-e hangklónozást, hangleírást és tempóállítást; motoronként külön beállítási blokk.
+- Hangstúdió: klónozás nélküli motornál figyelmeztetés jelenik meg, a referenciafeltöltés elrejtődik, és szereplőnként, illetve a narrátornál választható beépített hang.
+- A MOSS-motorok referenciahang nélkül a leírás neméhez illő, automatikusan készített magyar mintahangot klónoznak.
+
+### English
+
+#### Added
+
+- Four new local speech engines with official Hungarian support:
+  - **MOSS-TTS 1.5 (4B)**: Apache-2.0, GPU, voice cloning, in an isolated process with a pinned model revision;
+  - **MOSS-TTS-Nano**: voice cloning without a graphics card;
+  - **Supertonic 3**: CPU, ten preset voices, no voice cloning;
+  - **Piper**: the Hungarian voices Anna, Berta and Imre, no voice cloning; the GPL package can be installed separately from Settings.
+- The engine selector shows whether an engine supports voice cloning, voice description and speed control, with a separate settings block per engine.
+- Voice Studio: for engines without cloning it shows a notice, hides reference upload, and offers a preset voice per character and for the narrator.
+- Without a reference recording the MOSS engines clone an automatically created Hungarian sample voice matching the described gender.
+
 ## [3.5.0] - 2026-09-29
 
 ### Magyar

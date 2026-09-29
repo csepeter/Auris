@@ -92,6 +92,16 @@ async function loadSettings() {
   toggleHiggsSource(higgsSrc);
   toggleHiggsPromptMode(_settings.higgs_prompt_mode || 'raw');
 
+  // Additional engines
+  const setValue = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+  setValue('piper-voice', _settings.piper_voice || 'anna');
+  setValue('supertonic-voice', _settings.supertonic_voice || 'F1');
+  setValue('supertonic-steps', _settings.supertonic_steps ?? 10);
+  setValue('moss-seed', _settings.moss_seed ?? 1234);
+  setValue('moss-temperature', _settings.moss_temperature ?? 1.7);
+  setValue('moss-top-p', _settings.moss_top_p ?? 0.8);
+  setValue('moss-top-k', _settings.moss_top_k ?? 25);
+
   // Character / dialogue-speaker detection
   const detectionMode = _settings.character_detection_mode || 'legacy';
   const llmProvider = _settings.llm_provider || 'local';
@@ -339,13 +349,51 @@ async function testLLMConnection() {
   }
 }
 
+const ENGINE_CAPABILITIES = {
+  omnivoice: {clone: true, design: true, speed: true, device: 'GPU vagy CPU', license: 'kód Apache-2.0, súlyok CC-BY-NC'},
+  higgs: {clone: true, design: false, speed: true, device: 'GPU', license: 'Boson kutatási licenc'},
+  moss_tts: {clone: true, design: false, speed: false, device: 'GPU, ~14 GB VRAM', license: 'Apache-2.0'},
+  moss_nano: {clone: true, design: false, speed: false, device: 'CPU', license: 'Apache-2.0'},
+  supertonic: {clone: false, design: false, speed: true, device: 'CPU', license: 'OpenRAIL-M'},
+  piper: {clone: false, design: false, speed: true, device: 'CPU', license: 'GPL-3.0 (piper-tts)'},
+};
+
 function toggleEngineSettings(engine) {
-  document.querySelectorAll('.omnivoice-settings').forEach(el =>
-    el.classList.toggle('hidden', engine !== 'omnivoice')
-  );
-  document.querySelectorAll('.higgs-settings').forEach(el =>
-    el.classList.toggle('hidden', engine !== 'higgs')
-  );
+  document.querySelectorAll('.engine-settings').forEach(el => {
+    const owner = [...el.classList].find(name => name.endsWith('-settings') && name !== 'engine-settings');
+    el.classList.toggle('hidden', owner !== `${engine}-settings`);
+  });
+  const caps = ENGINE_CAPABILITIES[engine] || {};
+  const box = document.getElementById('engine-capabilities');
+  if (box) {
+    const chip = (ok, label) =>
+      `<span class="cap-chip ${ok ? 'cap-yes' : 'cap-no'}">${ok ? '✓' : '✕'} ${label}</span>`;
+    box.innerHTML = [
+      chip(caps.clone, 'hangklónozás'),
+      chip(caps.design, 'hangleírás (voice design)'),
+      chip(caps.speed, 'tempóállítás'),
+      `<span class="cap-chip">${esc(caps.device || '')}</span>`,
+      `<span class="cap-chip">${esc(caps.license || '')}</span>`,
+    ].join('');
+  }
+}
+
+async function installEngineRuntime(engine) {
+  const hint = document.getElementById('engine-install-hint');
+  if (hint) { hint.textContent = 'Telepítés…'; hint.className = 'status-hint status-warn'; }
+  try {
+    const response = await fetch('/api/settings/engine-install', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({engine}),
+    });
+    const data = await response.json();
+    if (hint) {
+      hint.textContent = data.message || (data.ok ? 'Telepítve.' : 'A telepítés nem sikerült.');
+      hint.className = 'status-hint ' + (data.ok ? 'status-ok' : 'status-error');
+    }
+  } catch (error) {
+    if (hint) { hint.textContent = error.message; hint.className = 'status-hint status-error'; }
+  }
 }
 
 document.querySelectorAll('input[name="higgs_model_source"]').forEach(el => {
@@ -619,6 +667,13 @@ async function saveSettingsValues() {
     subtitle_format:   document.getElementById('subtitle-format').value,
     audio_mastering:   document.getElementById('audio-mastering').checked,
     voice_design_anchor: document.getElementById('voice-design-anchor')?.checked !== false,
+    piper_voice:      document.getElementById('piper-voice')?.value || 'anna',
+    supertonic_voice: document.getElementById('supertonic-voice')?.value || 'F1',
+    supertonic_steps: parseInt(document.getElementById('supertonic-steps')?.value || '10', 10),
+    moss_seed:        parseInt(document.getElementById('moss-seed')?.value || '1234', 10),
+    moss_temperature: parseFloat(document.getElementById('moss-temperature')?.value || '1.7'),
+    moss_top_p:       parseFloat(document.getElementById('moss-top-p')?.value || '0.8'),
+    moss_top_k:       parseInt(document.getElementById('moss-top-k')?.value || '25', 10),
     theme:             document.getElementById('theme-select').value,
     font_family:       document.getElementById('font-family').value,
     font_size:         parseInt(document.getElementById('font-size').value) || 18,

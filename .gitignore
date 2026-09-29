@@ -58,3 +58,6 @@ desktop.ini
 *.swo
 # Local LLM evaluation output
 reader/data/llm_eval_*
+
+# ── Downloaded engine models (Piper, Supertonic, MOSS-TTS-Nano) ──────────────
+reader/models/

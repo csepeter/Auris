@@ -312,3 +312,14 @@ summary:focus-visible {
   }
 }
 .reanalysis-chapters { max-height: 220px; overflow-y: auto; margin-block: 12px; }
+
+/* Engine capability chips (Settings → speech engines) */
+.engine-capabilities { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cap-chip {
+  font-size: .76rem; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text2); background: var(--surface2, transparent);
+}
+.cap-chip.cap-yes { border-color: color-mix(in srgb, #6ec890 55%, var(--border)); color: var(--text); }
+.cap-chip.cap-no { opacity: .75; text-decoration: line-through; text-decoration-thickness: 1px; }
+.setting-grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.setting-grid-3 label { display: flex; flex-direction: column; gap: 6px; }

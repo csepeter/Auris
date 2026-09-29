@@ -1583,8 +1583,15 @@ def _editor_payload(chapter):
     return {'title': chapter['title'], 'blocks': text_editor.chapter_blocks(chapter),
             'revision': chapter['text_revision'] or 0,
             'can_restore': bool(chapter['previous_text_json']),
-            'speed_supported': not (app_settings.get('tts_engine', 'omnivoice') == 'higgs'
-                                   and app_settings.get('higgs_prompt_mode', 'raw') == 'raw')}
+            'speed_supported': _engine_supports_speed()}
+
+
+def _engine_supports_speed() -> bool:
+    from core.local_engines import ENGINE_INFO
+    engine = app_settings.get('tts_engine', 'omnivoice')
+    if engine == 'higgs':
+        return app_settings.get('higgs_prompt_mode', 'raw') != 'raw'
+    return bool(ENGINE_INFO.get(engine, {}).get('speed', True))
 
 
 @app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>/editor')
@@ -3522,6 +3529,8 @@ def save_settings():
         'subtitle_format', 'theme', 'font_size', 'font_family', 'line_height',
         'normalize_text', 'tts_num_step', 'tts_batch_size', 'tts_coalesce_chars',
         'audio_mastering', 'voice_design_anchor',
+        'piper_voice', 'supertonic_voice', 'supertonic_steps',
+        'moss_seed', 'moss_temperature', 'moss_top_p', 'moss_top_k',
         'tts_accel', 'tts_export_workers',
         'character_detection_mode', 'llm_provider',
         'llm_base_url', 'llm_api_key', 'llm_model',
@@ -3536,8 +3545,9 @@ def save_settings():
         if repo_key in updates and not security.valid_hf_repo(updates[repo_key]):
             return jsonify({'error': 'Érvénytelen Hugging Face repó-azonosító.'}), 400
     if 'tts_engine' in updates:
+        from core.tts_router import ENGINE_NAMES
         engine = str(updates['tts_engine'] or 'omnivoice').strip().lower()
-        updates['tts_engine'] = engine if engine in ('omnivoice', 'higgs') else 'omnivoice'
+        updates['tts_engine'] = engine if engine in ENGINE_NAMES else 'omnivoice'
     if 'higgs_model_source' in updates:
         source = str(updates['higgs_model_source'] or 'download').strip().lower()
         updates['higgs_model_source'] = source if source in ('local', 'download') else 'download'
@@ -3596,6 +3606,21 @@ def save_settings():
         updates['audio_mastering'] = bool(updates['audio_mastering'])
     if 'voice_design_anchor' in updates:
         updates['voice_design_anchor'] = bool(updates['voice_design_anchor'])
+    from core.local_engines import PIPER_VOICES, SUPERTONIC_VOICES
+    if 'piper_voice' in updates and updates['piper_voice'] not in PIPER_VOICES:
+        updates['piper_voice'] = 'anna'
+    if 'supertonic_voice' in updates and updates['supertonic_voice'] not in SUPERTONIC_VOICES:
+        updates['supertonic_voice'] = 'F1'
+    for key, low, high, cast in (
+        ('supertonic_steps', 4, 32, int), ('moss_seed', -1, 2**31 - 1, int),
+        ('moss_temperature', 0.1, 3.0, float), ('moss_top_p', 0.05, 1.0, float),
+        ('moss_top_k', 1, 200, int),
+    ):
+        if key in updates:
+            try:
+                updates[key] = max(low, min(high, cast(updates[key])))
+            except (TypeError, ValueError):
+                updates.pop(key)
     if 'tts_num_step' in updates:
         try:
             step = int(updates['tts_num_step'])
@@ -3651,6 +3676,8 @@ def save_settings():
         'tts_num_step',
         'normalize_text',
         'voice_design_anchor',
+        'piper_voice', 'supertonic_voice', 'supertonic_steps',
+        'moss_seed', 'moss_temperature', 'moss_top_p', 'moss_top_k',
     }
     if any(
         key in updates and updates[key] != previous.get(key)
@@ -3715,6 +3742,24 @@ def spacy_status_route():
     # English model is already explained by the status itself.
     status['error'] = char_module.spacy_error() if status.get('model_installed') else ''
     return jsonify(status)
+
+
+@app.route('/api/settings/engine-install', methods=['POST'])
+def engine_install():
+    """Install an optional engine runtime into the Auris virtual environment."""
+    import subprocess
+    body = request.get_json(silent=True) or {}
+    packages = {'piper': ['piper-tts==1.8.0']}
+    engine = str(body.get('engine') or '')
+    if engine not in packages:
+        return jsonify({'ok': False, 'message': 'Ismeretlen motor.'}), 400
+    result = subprocess.run(
+        [sys.executable, '-m', 'pip', 'install', *packages[engine]],
+        capture_output=True, text=True,
+    )
+    if result.returncode:
+        return jsonify({'ok': False, 'message': (result.stderr or result.stdout)[-600:]}), 500
+    return jsonify({'ok': True, 'message': 'Telepítve. Mentsd a beállítást, majd töltsd újra a beszédmotort.'})
 
 
 @app.route('/api/settings/spacy-install', methods=['POST'])

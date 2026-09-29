@@ -55,11 +55,20 @@
     <div class="setting-row">
       <label>Kiválasztott motor</label>
       <select id="tts-engine" class="select-input" onchange="toggleEngineSettings(this.value)">
-        <option value="omnivoice">OmniVoice</option>
-        <option value="higgs">Higgs TTS 3 — 4B</option>
+        <optgroup label="GPU, hangklónozással">
+          <option value="omnivoice">OmniVoice</option>
+          <option value="higgs">Higgs TTS 3 — 4B</option>
+          <option value="moss_tts">MOSS-TTS 1.5 — 4B</option>
+        </optgroup>
+        <optgroup label="CPU, grafikus kártya nélkül is">
+          <option value="moss_nano">MOSS-TTS-Nano (hangklónozás)</option>
+          <option value="supertonic">Supertonic 3 (beépített hangok, klónozás nélkül)</option>
+          <option value="piper">Piper — Anna, Berta, Imre (klónozás nélkül)</option>
+        </optgroup>
       </select>
       <span class="muted" style="font-size:.78rem">Mentés után használd a <strong>Beszédmotor újratöltése</strong> gombot. Motorváltáskor az előző modell felszabadul az új betöltése előtt.</span>
     </div>
+    <div id="engine-capabilities" class="engine-capabilities" aria-live="polite"></div>
     <div class="setting-row" style="margin-top:12px">
       <button class="btn btn-ghost btn-sm" onclick="reloadTTS().catch(e => { document.getElementById('tts-reload-hint').textContent = e.message; })">Beszédmotor újratöltése</button>
       <span id="tts-reload-hint" class="status-hint"></span>
@@ -208,6 +217,61 @@
     <div class="status-block">
       <strong>Licenc:</strong> Kutatási/nem kereskedelmi használat, valamint alkotói felhasználás hangoskönyvekhez és hasonló tartalomhoz, jól látható Boson AI Higgs Audio megjelöléssel. A hangklónozáshoz a beszélő hozzájárulása szükséges.</div>
   </section>
+
+  <!-- MOSS-TTS 1.5 -->
+  <section class="settings-section engine-settings moss_tts-settings hidden">
+    <div class="settings-section-title">MOSS-TTS 1.5 — 4B</div>
+    <p class="section-desc">Az OpenMOSS Apache-2.0 licencű, 31 nyelvű modellje (a magyar hivatalosan támogatott), hosszú szövegre tervezve. Első betöltéskor a modell és a hangkodek letöltődik a Hugging Face gyorsítótárba (<strong>~17,6 GB</strong>), és kb. 14 GB videomemóriát használ. Hangot csak klónozással ad: feltöltött referenciahang nélkül egy automatikusan készített magyar mintahangot (Supertonic vagy Piper) klónoz. Tempóállítást nem támogat.</p>
+    <div class="setting-row setting-grid-3">
+      <label>Hőmérséklet<input type="number" id="moss-temperature" class="text-input" min="0.1" max="3" step="0.1"></label>
+      <label>Top-p<input type="number" id="moss-top-p" class="text-input" min="0.05" max="1" step="0.05"></label>
+      <label>Top-k<input type="number" id="moss-top-k" class="text-input" min="1" max="200" step="1"></label>
+    </div>
+  </section>
+
+  <!-- MOSS-TTS-Nano -->
+  <section class="settings-section engine-settings moss_nano-settings hidden">
+    <div class="settings-section-title">MOSS-TTS-Nano (CPU)</div>
+    <p class="section-desc">100 millió paraméteres, Apache-2.0 licencű hangklónozó modell, amely videokártya nélkül, processzoron fut. Első betöltéskor kb. 0,8 GB-ot tölt le a <code>reader/models</code> mappába. Referenciahang nélkül automatikusan készített magyar mintahangot klónoz; saját hanghoz tölts fel referenciát a Hangstúdióban (átirat nem szükséges). Tempóállítást nem támogat.</p>
+    <div class="setting-row">
+      <label>Véletlenmag (azonos mag → ismételhető hang)</label>
+      <input type="number" id="moss-seed" class="text-input" min="-1" step="1" style="max-width:140px">
+    </div>
+  </section>
+
+  <!-- Supertonic 3 -->
+  <section class="settings-section engine-settings supertonic-settings hidden">
+    <div class="settings-section-title">Supertonic 3 (CPU)</div>
+    <p class="section-desc"><strong>Nem támogat hangklónozást:</strong> tíz beépített hanggal (F1–F5 női, M1–M5 férfi) dolgozik. A Hangstúdióban feltöltött referenciahangot figyelmen kívül hagyja; a szereplő hangját a leírás neme vagy a Hangstúdióban választott beépített hang határozza meg. Nagyon gyors, 44,1 kHz-en készül. Első betöltéskor kb. 0,4 GB-ot tölt le. A modell licence BigScience OpenRAIL-M (használati korlátozásokkal), a kód MIT.</p>
+    <div class="setting-row setting-grid-3">
+      <label>Alapértelmezett hang
+        <select id="supertonic-voice" class="select-input">
+          <option value="F1">F1 (női)</option><option value="F2">F2 (női)</option><option value="F3">F3 (női)</option><option value="F4">F4 (női)</option><option value="F5">F5 (női)</option>
+          <option value="M1">M1 (férfi)</option><option value="M2">M2 (férfi)</option><option value="M3">M3 (férfi)</option><option value="M4">M4 (férfi)</option><option value="M5">M5 (férfi)</option>
+        </select>
+      </label>
+      <label>Minőség (lépések, 4–32)<input type="number" id="supertonic-steps" class="text-input" min="4" max="32" step="1"></label>
+    </div>
+  </section>
+
+  <!-- Piper -->
+  <section class="settings-section engine-settings piper-settings hidden">
+    <div class="settings-section-title">Piper — magyar hangok</div>
+    <p class="section-desc"><strong>Nem támogat hangklónozást:</strong> a három magyar hang (Anna és Berta női, Imre férfi) közül választ, a feltöltött referenciahangot figyelmen kívül hagyja. Kiszámítható, nem hallucinál, és bármilyen gépen valós időnél gyorsabb. Az első betöltés kb. 190 MB hangot tölt le. A <code>piper-tts</code> csomag GPL-3.0 licencű, ezért külön telepíthető.</p>
+    <div class="setting-row">
+      <label>Alapértelmezett hang</label>
+      <select id="piper-voice" class="select-input" style="max-width:220px">
+        <option value="anna">Anna (női)</option>
+        <option value="berta">Berta (női)</option>
+        <option value="imre">Imre (férfi)</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <button class="btn btn-ghost btn-sm" type="button" onclick="installEngineRuntime('piper')">Piper telepítése</button>
+      <span id="engine-install-hint" class="status-hint"></span>
+    </div>
+  </section>
+
 
       </div>
       <div class="settings-category" id="settings-characters"

@@ -236,3 +236,12 @@
     min-height: 42px;
   }
 }
+
+/* Engine-aware Voice Studio: engines without cloning hide reference upload */
+.engine-voice-note {
+  margin: 0 0 18px; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface2, transparent);
+  color: var(--text2); font-size: .9rem; line-height: 1.5;
+}
+.engine-no-clone .clone-section { display: none; }
+.preset-voice-wrap, .preset-voice-label { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; font-size: .85rem; color: var(--text2); }

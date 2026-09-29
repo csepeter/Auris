@@ -11,9 +11,9 @@ Current version: [`VERSION`](VERSION). See the complete bilingual
 [`CHANGELOG.md`](CHANGELOG.md) and the [`RELEASING.md`](RELEASING.md) guide for
 the versioning and release process.
 
-Local-first audiobook reader for EPUB, PDF, DOCX, TXT, PRC/MOBI, and public web articles with selectable local
-OmniVoice or Higgs TTS 3 speech, character-aware voices, per-book narrator
-control, and duration-based estimated word highlighting.
+Local-first audiobook reader for EPUB, PDF, DOCX, TXT, PRC/MOBI, and public web articles with six selectable local
+speech engines (OmniVoice, Higgs TTS 3, MOSS-TTS 1.5, MOSS-TTS-Nano, Supertonic 3 and Piper), Hungarian-first text
+processing, character-aware voices, per-book narrator control, and duration-based estimated word highlighting.
 
 Reading, speech generation, playback, and file import run locally after setup,
 with no hosted TTS dependency. Web-article import requires a network connection.
@@ -38,6 +38,15 @@ labels and the updated workflows described below and in the built-in help.
 ![Settings](assets/settings.png)
 
 ## Highlights
+
+- Six local speech engines, all with official Hungarian support: OmniVoice and
+  Higgs TTS 3 (GPU, voice cloning), MOSS-TTS 1.5 (GPU, Apache-2.0, cloning),
+  MOSS-TTS-Nano (CPU cloning), and Supertonic 3 and Piper (CPU, preset voices
+  without voice cloning). Settings shows each engine's capabilities and
+  Voice Studio adapts to them.
+- Hungarian text processing: dates, Roman numerals, times, units, currencies,
+  abbreviations and acronyms are spoken correctly; Hungarian sentence splitting,
+  dialogue dashes and quotes; HuSpaCy-based character detection.
 
 - Preview and import EPUB, PDF, DOCX, TXT, DRM-free PRC/MOBI, or a public HTTP(S) article; edit title,
   author, and language before confirming.

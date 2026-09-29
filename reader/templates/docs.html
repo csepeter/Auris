@@ -17,6 +17,7 @@
         <a href="#voices">Hangok és klónozás</a>
         <a href="#omnivoice">OmniVoice</a>
         <a href="#higgs">Higgs TTS 3</a>
+        <a href="#more-engines">MOSS, Supertonic, Piper</a>
         <a href="#engine-lifecycle">Motor és beállítások</a>
         <a href="#export">Export és gyorsítótár</a>
         <a href="#storage">Tárhely és mentés</a>
@@ -27,8 +28,8 @@
       <div class="docs-side-note">
         <span class="docs-side-note-mark">i</span>
         <div>
-          <strong>Két külön TTS motor</strong>
-          <span>Az Auris egyszerre egy motort tart aktívan. A közös könyv- és hangadatokat mindkettő használja.</span>
+          <strong>Hat választható TTS motor</strong>
+          <span>Az Auris egyszerre egy motort tart aktívan. A közös könyv- és hangadatokat mindegyik használja.</span>
         </div>
       </div>
     </div>
@@ -40,8 +41,8 @@
         <h1>Auris dokumentáció</h1>
         <p>
           Helyi könyvolvasás, többszereplős felolvasás és audiobook-export
-          OmniVoice vagy Higgs TTS 3 motorral. Ez az oldal a jelenleg
-          implementált Auris-funkciókat és a két motor eltéréseit írja le.
+          hat választható beszédmotorral. Ez az oldal a jelenleg
+          implementált Auris-funkciókat és a motorok eltéréseit írja le.
         </p>
       </div>
       <a class="docs-settings-link" href="/settings">Beállítások megnyitása <span aria-hidden="true">→</span></a>
@@ -50,7 +51,7 @@
     <section class="benchmark-lead docs-engine-intro" aria-labelledby="engine-title">
       <div class="benchmark-lead-intro">
         <span class="docs-kicker">TTS motorválasztás</span>
-        <h2 id="engine-title">Közös Auris, két eltérő beszédmotor</h2>
+        <h2 id="engine-title">Közös Auris, hat választható beszédmotor</h2>
         <p>
           A könyvtár, a fejezetek, a szereplők, a Voice Studio, a lejátszás,
           a könyvjelzők és az export közös. A modellbetöltés és a generálási
@@ -69,6 +70,12 @@
           <h3>Erős magyar kiejtés és expresszív vezérlés</h3>
           <p>100+ nyelv, zero-shot hangklónozás, érzelem-, stílus-, prozódia-, szünet- és hangeffekt-tokenek.</p>
           <a href="#higgs">Higgs tudnivalók →</a>
+        </article>
+        <article>
+          <span class="result-label">MOSS-TTS 1.5 · Nano · Supertonic 3 · Piper</span>
+          <h3>Nyílt licencű és processzoron futó magyar motorok</h3>
+          <p>Hosszú szövegre tervezett Apache-2.0 modell, grafikus kártya nélküli hangklónozás, és két klónozás nélküli, beépített hangú gyors motor.</p>
+          <a href="#more-engines">További motorok →</a>
         </article>
       </div>
       <div class="docs-callout">
@@ -815,6 +822,54 @@ ffprobe -version</code></pre>
       </p>
     </section>
 
+    <section class="docs-section" id="more-engines">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">05b</span>
+        <div>
+          <h2>MOSS-TTS 1.5, MOSS-TTS-Nano, Supertonic 3 és Piper</h2>
+          <p>Mind a négy motor hivatalosan támogatja a magyart, és ugyanazt a könyvtárat, gyorsítótárat és exportot használja.</p>
+        </div>
+      </div>
+      <div class="settings-guide-wrap">
+        <table class="settings-guide">
+          <thead><tr><th>Motor</th><th>Hang</th><th>Hardver</th><th>Letöltés</th><th>Licenc</th></tr></thead>
+          <tbody>
+            <tr><td><strong>MOSS-TTS 1.5 — 4B</strong></td><td>Hangklónozás; tempóállítás nincs</td><td>GPU, kb. 14 GB VRAM</td><td>~17,6 GB (Hugging Face gyorsítótár)</td><td>Apache-2.0</td></tr>
+            <tr><td><strong>MOSS-TTS-Nano</strong></td><td>Hangklónozás (átirat nélkül); tempóállítás nincs</td><td>CPU</td><td>~0,8 GB (<code>reader/models</code>)</td><td>Apache-2.0</td></tr>
+            <tr><td><strong>Supertonic 3</strong></td><td><strong>Nincs hangklónozás</strong>: 10 beépített hang (F1–F5, M1–M5)</td><td>CPU</td><td>~0,4 GB</td><td>OpenRAIL-M modell, MIT kód</td></tr>
+            <tr><td><strong>Piper</strong></td><td><strong>Nincs hangklónozás</strong>: Anna, Berta, Imre</td><td>CPU</td><td>~190 MB</td><td>GPL-3.0 csomag (külön telepítendő), CC0 hangok</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Klónozás nélküli motorok (Supertonic, Piper)</h3>
+          <ul class="docs-check-list">
+            <li>A feltöltött referenciahangot figyelmen kívül hagyják; a Hangstúdió ezt jelzi, és elrejti a referencia feltöltését.</li>
+            <li>A hangot a leírás neme választja ki (női → Anna/Berta vagy F1–F5, férfi → Imre vagy M1–M5), azonos leírás mindig ugyanazt a hangot adja.</li>
+            <li>A Hangstúdió <strong>Beépített hang</strong> mezőjében szereplőnként és a narrátornál is választható konkrét hang.</li>
+            <li>A tempóállítás működik. Az OmniVoice hangulatcímkéit (<code>[laughter]</code> stb.) ezek a motorok nem mondják fel.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Klónozó motorok (MOSS-TTS, Nano)</h3>
+          <ul class="docs-check-list">
+            <li>Saját hanghoz tölts fel referenciahangot. A Nano átiratot nem használ.</li>
+            <li>Referencia nélkül az Auris a leírás neméhez illő magyar mintahangot készít a Supertonic (vagy ha az nem érhető el, a Piper) motorral, és azt klónozza. Ezt egyszer készíti el és elmenti.</li>
+            <li>A MOSS-TTS a távoli kódot rögzített, ellenőrzött modellverzióból futtatja, külön folyamatban; leállításkor a teljes videomemória felszabadul.</li>
+            <li>A <strong>Véletlenmag</strong> a mintavételt befolyásolja; a MOSS-TTS ugyanazzal a maggal sem ad mindig bitazonos hangot.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="docs-callout">
+        <span class="docs-callout-icon" aria-hidden="true">⚡</span>
+        <div>
+          <strong>Saját mérés (RTX 3090, magyar mondatok, 2026. szeptember):</strong>
+          <p>Piper RTF 0,04–0,1 és Supertonic RTF ~0,2 processzoron; MOSS-TTS-Nano RTF ~1,2–1,4 processzoron (az első mondat a mintahang elkészítését is tartalmazza); MOSS-TTS 1.5 RTF ~0,9 GPU-n. Az RTF a generálási idő és a hang hosszának aránya; 1 alatt a valós időnél gyorsabb. Hallás utáni minőségi összevetés nem készült; a magyar minőséget saját fülpróbával vagy a minőségellenőrzéssel érdemes értékelni.</p>
+        </div>
+      </div>
+    </section>
+
     <section class="docs-section" id="engine-lifecycle">
       <div class="docs-section-heading">
         <span class="docs-section-index">06</span>
@@ -827,7 +882,7 @@ ffprobe -version</code></pre>
         <div>
           <h3>Motorváltás</h3>
           <ol class="docs-number-list">
-            <li>Válaszd ki az aktív beszédmotornál az OmniVoice vagy Higgs motort.</li>
+            <li>Válaszd ki az aktív beszédmotort. A választó alatt látszik, hogy a motor támogat-e hangklónozást, hangleírást és tempóállítást.</li>
             <li>Mentsd a beállításokat.</li>
             <li>Nyomd meg a <strong>Beszédmotor újratöltése</strong> gombot.</li>
             <li>Várd meg a jobb felső állapotjelző <strong>ready</strong> állapotát.</li>
@@ -1197,7 +1252,7 @@ ffprobe -version</code></pre>
     </section>
 
     <footer class="docs-footer">
-      <span>Auris · helyi, kétmotoros audiobook workflow</span>
+      <span>Auris · helyi, többmotoros magyar hangoskönyv-készítés</span>
       <a href="#overview">Vissza az elejére ↑</a>
     </footer>
   </main>

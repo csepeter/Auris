@@ -100,3 +100,11 @@ test('A custom Hungarian preview text is preserved', () => {
   const payload = previewPayload('female, young adult', '', 'Tűz és vér.');
   assert.equal(payload.text, 'Tűz és vér.');
 });
+
+test("preset voice token is replaced, not duplicated", () => {
+  const { presetVoiceOf, withPresetVoice } = require("../static/js/voice_studio.js");
+  const instruct = withPresetVoice("female, middle-aged, voice:anna", "berta");
+  assert.equal(instruct, "female, middle-aged, voice:berta");
+  assert.equal(presetVoiceOf(instruct), "berta");
+  assert.equal(withPresetVoice(instruct, ""), "female, middle-aged");
+});

@@ -41,3 +41,48 @@ Copyright 2019-2026 Adrien Barbaresi and contributors.
 Licensed under the Apache License, Version 2.0:
 
 https://www.apache.org/licenses/LICENSE-2.0
+
+## MOSS-TTS-Nano ONNX runtime (vendored)
+
+`reader/core/vendor/moss_tts_nano_onnx/` contains the unmodified ONNX CPU
+runtime and text-normalization modules of MOSS-TTS-Nano:
+
+https://github.com/OpenMOSS/MOSS-TTS-Nano
+
+Copyright OpenMOSS Team. Licensed under the Apache License, Version 2.0; the
+full license text is in `reader/core/vendor/moss_tts_nano_onnx/LICENSE`.
+The MOSS-TTS, MOSS-TTS-Nano and MOSS Audio Tokenizer model weights are
+downloaded from Hugging Face at runtime and are licensed under Apache-2.0.
+
+## Supertonic (vendored helper)
+
+`reader/core/vendor/supertonic/helper.py` is copied unchanged from:
+
+https://github.com/supertone-oss-archive/supertonic
+
+MIT License, Copyright (c) 2025 Supertone Inc. The full text is in
+`reader/core/vendor/supertonic/LICENSE`. The Supertonic 3 model weights are
+downloaded at runtime from `supertone-oss-archive/supertonic-3` and are
+licensed under the BigScience OpenRAIL-M license, which includes use-based
+restrictions that users must follow.
+
+## Piper and Hungarian Piper voices (optional)
+
+The optional Piper engine uses the `piper-tts` package (piper1-gpl,
+GPL-3.0-or-later, bundling espeak-ng, GPL-3.0). Auris does not bundle it; the
+user installs it separately from Settings. The Hungarian voices (`anna`,
+`berta`, `imre`) are downloaded from `rhasspy/piper-voices`; their training
+data is published under CC0.
+
+## HuSpaCy
+
+Hungarian character detection can use the HuSpaCy `hu_core_news_md` model,
+installed on request from https://huggingface.co/huspacy. HuSpaCy is licensed
+under Apache-2.0; see the model card for the licenses of its training data.
+
+## Pyphen
+
+Pyphen (https://github.com/Kozea/Pyphen) and its Hungarian hyphenation
+dictionary are used to tell PDF line-break hyphens from compound hyphens.
+Pyphen is licensed under GPL-2.0+/LGPL-2.1+/MPL-1.1; the Hungarian dictionary
+is distributed by the LibreOffice project under the same terms.

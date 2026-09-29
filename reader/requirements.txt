@@ -58,3 +58,6 @@ spacy>=3.7               # NLP / character detection
 
 trafilatura>=2.2,<3      # Web article text and metadata extraction
 pyphen>=0.15            # Hungarian hyphenation: PDF line-break vs compound hyphen
+onnxruntime>=1.20,<2      # Supertonic 3 and MOSS-TTS-Nano (CPU engines)
+sentencepiece>=0.2       # MOSS-TTS-Nano tokenizer
+# Optional, GPL-3.0: piper-tts==1.8.0 (Piper engine; install from Settings)
