@@ -1317,6 +1317,29 @@ def _segment_speed(sentence: str, is_dialogue: bool, scene_speed: float, tag: st
     return round(speed, 2)
 
 
+_HONORIFICS = ("bácsi", "néni", "úr", "asszony", "kisasszony", "doktor", "tanár úr")
+
+
+def _resolve_character_name(name: str | None, character_map: dict) -> str | None:
+    """Match an attributed name ("Anna", "Imre bácsi") to a detected character
+    ("Kovács Anna", "Nagy Imre"). Ambiguous short names stay unassigned."""
+    if not name:
+        return None
+    name = name.strip()
+    if name in character_map:
+        return name
+    lowered = name.lower()
+    for honorific in _HONORIFICS:
+        if lowered.endswith(" " + honorific):
+            return _resolve_character_name(name[: -len(honorific)].strip(), character_map)
+    parts = name.split()
+    if len(parts) != 1:
+        return None
+    owners = [full for full in character_map
+              if len(full.split()) >= 2 and name in (full.split()[0], full.split()[-1])]
+    return owners[0] if len(owners) == 1 else None
+
+
 def enrich_chapter(
     chapter_text: str,
     character_map: dict,
@@ -1363,11 +1386,16 @@ def enrich_chapter(
 
     segments = []
     last_speaker = None
+    # A paragraph is one speaker's turn: an unattributed dialogue sentence
+    # continues the speaker already found earlier in the same paragraph.
+    paragraph_speaker = None
     for sequence_index, unit in enumerate(sentence_units):
         unit_index = unit["index"]
         sentence = unit["text"]
         sentence = sentence.strip()
         if not sentence:
+            if unit.get("ends_paragraph"):
+                paragraph_speaker = None
             continue
 
         if speaker_annotations is None:
@@ -1380,7 +1408,14 @@ def enrich_chapter(
             is_dialogue = bool(speaker)
         speaker = speaker or None
         if speaker and speaker not in character_map:
-            speaker = None
+            speaker = _resolve_character_name(speaker, character_map)
+        if speaker_annotations is None:
+            if speaker:
+                paragraph_speaker = speaker
+            elif is_dialogue and paragraph_speaker:
+                speaker = paragraph_speaker
+            if unit.get("ends_paragraph"):
+                paragraph_speaker = None
         if speaker:
             last_speaker = speaker
 

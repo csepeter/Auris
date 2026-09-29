@@ -9,6 +9,7 @@ from core.enrichment import (
     _inject_tags,
     _is_heading_paragraph,
     _normalize_source_text,
+    _resolve_character_name,
     _scene_speed,
     _split_paragraph_sentences,
     _split_paragraphs,
@@ -523,6 +524,43 @@ class EnglishBehaviourTests(unittest.TestCase):
         segment = enrich_chapter('"Come here," John whispered.', characters)[0]
         self.assertEqual(segment["character_name"], "John")
         self.assertEqual(segment["instruct"], "male, whisper")
+
+
+
+class HungarianSpeakerResolutionTests(unittest.TestCase):
+    CHARACTERS = {
+        "Kovács Anna": {"instruct": "female, young adult, moderate pitch"},
+        "Nagy Imre": {"instruct": "male, elderly, low pitch"},
+        "Péter": {"instruct": "male, young adult, moderate pitch"},
+    }
+
+    def _speakers(self, text):
+        return [(seg["character_name"], seg["text"]) for seg in enrich_chapter(text, self.CHARACTERS)]
+
+    def test_short_names_and_honorifics_resolve_to_full_character(self):
+        resolve = _resolve_character_name
+        self.assertEqual(resolve("Anna", self.CHARACTERS), "Kovács Anna")
+        self.assertEqual(resolve("Imre bácsi", self.CHARACTERS), "Nagy Imre")
+        self.assertEqual(resolve("Péter", self.CHARACTERS), "Péter")
+        self.assertIsNone(resolve("Kiss", self.CHARACTERS))
+        ambiguous = {"Kovács Anna": {}, "Nagy Anna": {}}
+        self.assertIsNone(resolve("Anna", ambiguous))
+
+    def test_attributed_dialogue_uses_the_detected_full_name(self):
+        pairs = self._speakers("– Francia név – suttogta Anna. – Vajon ki lehetett?")
+        self.assertTrue(pairs)
+        self.assertTrue(all(name == "Kovács Anna" for name, _ in pairs), pairs)
+
+    def test_unattributed_sentence_continues_the_paragraph_speaker(self):
+        text = (chr(10) * 2).join([
+            "– Holnap reggel kievezünk – mondta Péter lassan. – Hét órakor itt találkozunk.",
+            "– Láttam, kislányom – felelte az öreg halkan.",
+        ])
+        pairs = self._speakers(text)
+        by_text = {t: n for n, t in pairs}
+        self.assertEqual(by_text.get("– Hét órakor itt találkozunk."), "Péter", pairs)
+        # A new paragraph without a name stays with the narrator.
+        self.assertIsNone(next(n for n, t in pairs if t.startswith("– Láttam")))
 
 
 if __name__ == "__main__":
