@@ -204,7 +204,7 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
         }
         application._persist_job(job)
     except application.JobCancelled:
-        jobs.mark_cancelled(job_id, 'Export cancelled after current batch')
+        jobs.mark_cancelled(job_id, 'Az export leállítva az aktuális csomag után')
         job['state'] = 'cancelled'
     except Exception as e:
         application.log.exception('Export job %s failed', job_id)
@@ -400,7 +400,7 @@ def _run_chapterwise_export(
         }
         application._persist_job(job)
     except application.JobCancelled:
-        jobs.mark_cancelled(job_id, 'Export cancelled after current batch')
+        jobs.mark_cancelled(job_id, 'Az export leállítva az aktuális csomag után')
         job['state'] = 'cancelled'
     except Exception as e:
         application.log.exception('Export job %s failed', job_id)

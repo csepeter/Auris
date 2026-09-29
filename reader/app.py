@@ -181,7 +181,7 @@ def _check_job_cancelled(job: dict | None, *, throttle: bool = False) -> None:
             return
         job['_cancel_checked_at'] = now
     if jobs.is_cancel_requested(job['job_id']):
-        raise JobCancelled('Cancellation requested')
+        raise JobCancelled('Leállítás kérve')
 
 
 def _active_durable_jobs(*, book_id: int | None = None) -> list[dict]:
@@ -1133,7 +1133,7 @@ def _detect_characters(
             )
             _persist_job(analysis_job)
     except JobCancelled:
-        jobs.mark_cancelled(job_id, 'Character analysis cancelled after current batch')
+        jobs.mark_cancelled(job_id, 'A szereplőelemzés leállítva az aktuális csomag után')
     except Exception as exc:
         log.exception('LLM character analysis failed for book %s', book_id)
         _set_character_analysis_status(book_id, 'failed', str(exc))
@@ -2428,7 +2428,7 @@ def _chapter_generation_snapshot(
         snapshot = {
             'job_id': job_id,
             'state': 'complete' if complete else 'idle',
-            'message': 'Ready' if complete else 'Not generated',
+            'message': 'Kész' if complete else 'Még nem készült el',
             'done': ready,
             'total': total,
             'eta_sec': None,
@@ -2486,7 +2486,7 @@ def _run_chapter_generation(job_id: str, book_id: int, chapter_id: int) -> None:
         }
         _persist_job(job)
     except JobCancelled:
-        jobs.mark_cancelled(job_id, 'Generation cancelled after current batch')
+        jobs.mark_cancelled(job_id, 'A generálás leállítva az aktuális csomag után')
         job['state'] = 'cancelled'
     except Exception as exc:
         log.exception('Chapter generation job %s failed', job_id)
@@ -2563,7 +2563,7 @@ def generate_chapter_audio(book_id, chapter_id):
     if total and ready >= total:
         return jsonify({
             'state': 'complete',
-            'message': 'Ready',
+            'message': 'Kész',
             'done': total,
             'total': total,
             'ready': ready,

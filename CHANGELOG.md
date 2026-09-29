@@ -12,6 +12,20 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-09-29
+
+### Magyar
+
+#### Javítva
+
+- Magyarra fordított, eddig angolul maradt üzenetek: a leállított export, generálás és szereplőelemzés állapota a Feladatok oldalon („Az export leállítva az aktuális csomag után”), a Beállítások GPU-gyorsítási állapota („Hibrid gyorsítás: Triton-kernelek + CUDA Graph”), a fejezet készültsége, valamint a Higgs- és az MP4-metaadat-hibák.
+
+### English
+
+#### Fixed
+
+- Messages that were still English are now Hungarian: cancelled export, generation and character-analysis states on the Jobs page, the GPU acceleration status in Settings, chapter readiness, and Higgs and MP4-metadata errors.
+
 ## [4.3.1] - 2026-09-29
 
 ### Magyar

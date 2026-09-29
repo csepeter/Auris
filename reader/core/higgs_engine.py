@@ -517,7 +517,7 @@ class HiggsTTSEngine:
         seed_override: int | None = None,
     ) -> np.ndarray:
         if not self._ready or self._worker is None:
-            raise RuntimeError("Higgs TTS is not loaded. " + (self._error or "Load it first."))
+            raise RuntimeError("A Higgs beszédmotor nincs betöltve. " + (self._error or "Előbb töltsd be."))
         settings = self._generation_settings()
         seed = settings.pop("seed")
         if seed_override is not None:

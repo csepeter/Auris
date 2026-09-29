@@ -107,7 +107,7 @@ def _extract_loudnorm_measurements(stderr: str) -> dict:
     for key in required:
         value = str(measurements.get(key, '')).strip().lower()
         if not value or value in {'-inf', 'inf', 'nan'}:
-            raise ValueError(f'Invalid FFmpeg loudness measurement: {key}')
+            raise ValueError(f'Érvénytelen FFmpeg-hangosságmérés: {key}')
     return measurements
 
 

@@ -521,13 +521,13 @@ def apply_acceleration(model, mode: str | None = "auto") -> dict:
     }
 
     if effective == "off":
-        status["message"] = "Acceleration off"
+        status["message"] = "Gyorsítás kikapcsolva"
         return status
 
     status["scoring_opt"] = apply_scoring_optimization(model)
 
     if effective == "eager":
-        status["message"] = "PyTorch scoring optimization (no CUDA Graph / Triton)"
+        status["message"] = "Optimalizált PyTorch (CUDA Graph és Triton nélkül)"
         return status
 
     if effective in ("triton", "hybrid"):
@@ -545,21 +545,21 @@ def apply_acceleration(model, mode: str | None = "auto") -> dict:
 
     if effective == "hybrid":
         if status["triton"] and status["cuda_graph"]:
-            status["message"] = "Hybrid acceleration: Triton kernels + CUDA Graph"
+            status["message"] = "Hibrid gyorsítás: Triton-kernelek + CUDA Graph"
         elif status["cuda_graph"]:
-            status["message"] = "CUDA Graph only (Triton unavailable on this platform)"
+            status["message"] = "Csak CUDA Graph (a Triton ezen a gépen nem érhető el)"
             status["effective"] = "cuda_graph"
         elif status["triton"]:
-            status["message"] = "Triton kernels only (CUDA Graph wrap failed)"
+            status["message"] = "Csak Triton-kernelek (a CUDA Graph nem kapcsolható be)"
             status["effective"] = "triton"
         else:
-            status["message"] = "No acceleration applied"
+            status["message"] = "Nincs aktív gyorsítás"
             status["effective"] = "off"
     elif effective == "cuda_graph":
         status["message"] = (
-            "CUDA Graph acceleration enabled"
+            "CUDA Graph-gyorsítás bekapcsolva"
             if status["cuda_graph"]
-            else "CUDA Graph failed"
+            else "A CUDA Graph nem kapcsolható be"
         )
         if not status["cuda_graph"]:
             status["effective"] = "off"
@@ -569,12 +569,12 @@ def apply_acceleration(model, mode: str | None = "auto") -> dict:
             status["message"] = "Triton + CUDA Graph"
             status["effective"] = "hybrid"
         elif status["triton"]:
-            status["message"] = "Triton kernels enabled"
+            status["message"] = "Triton-kernelek bekapcsolva"
         elif status["cuda_graph"]:
-            status["message"] = "CUDA Graph (Triton patch unavailable)"
+            status["message"] = "CUDA Graph (a Triton-kernelek nem érhetők el)"
             status["effective"] = "cuda_graph"
         else:
-            status["message"] = "Triton not available"
+            status["message"] = "A Triton nem érhető el"
             status["effective"] = "off"
 
     log.info("TTS acceleration: %s", status["message"])
