@@ -457,9 +457,16 @@ function initJobs() {
   }
   setFilter(saved || "all");
   loadJobs();
+  // Server events drive refreshes; the slow timer only covers missed events.
+  let queued = null;
+  const refreshSoon = () => {
+    if (queued || document.hidden) return;
+    queued = setTimeout(() => { queued = null; loadJobs(); }, 400);
+  };
+  if (window.Auris?.onEvent) window.Auris.onEvent("jobs", refreshSoon);
   setInterval(() => {
     if (!document.hidden) loadJobs();
-  }, 3000);
+  }, window.EventSource ? 30000 : 3000);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) loadJobs();
   });

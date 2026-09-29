@@ -2,9 +2,7 @@
 (() => {
   const BOOK_ID = window.BOOK_ID;
   const $ = (id) => document.getElementById(id);
-  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-  ));
+  const esc = window.Auris.esc;
   if (!$("assist-panel")) return;
 
   function setStatus(text, kind = "") {
@@ -13,13 +11,10 @@
     el.className = `assist-status ${kind}`;
   }
 
-  async function waitJob(jobId) {
-    for (;;) {
-      const job = await fetch(`/api/jobs/${jobId}`).then((r) => r.json());
-      if (["complete", "failed", "cancelled", "interrupted"].includes(job.state)) return job;
-      setStatus(job.message || "Folyamatban…");
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
+  function waitJob(jobId) {
+    return window.Auris.watchJob(jobId, {
+      onUpdate: (job) => setStatus(job.message || "Folyamatban…"),
+    });
   }
 
   async function start(url, body) {

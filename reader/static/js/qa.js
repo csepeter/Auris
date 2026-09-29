@@ -6,13 +6,10 @@
   const STATUS_LABELS = new Proxy({}, { get: (_, key) => t(`qa.${String(key)}`, String(key)) });
   let filter = "problems";
   let segments = [];
-  let pollTimer = null;
   const audio = document.getElementById("qa-audio");
 
   const $ = (id) => document.getElementById(id);
-  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-  ));
+  const esc = window.Auris.esc;
 
   async function api(url, options = {}) {
     const response = await fetch(url, options);
@@ -95,11 +92,15 @@
         <div class="qa-actions">
           ${item.audio_url ? `<button class="btn btn-sm btn-ghost" data-action="play" data-url="${esc(item.audio_url)}" type="button">▶ Lejátszás</button>` : ""}
           <button class="btn btn-sm btn-ghost" data-action="take" type="button">↻ Új változat</button>
+          ${item.sfx
+            ? `<span class="qa-sfx">♪ ${esc(item.sfx.name || "hangeffekt")} · ${item.sfx.position === "before" ? "előtte" : "mondattal"} · ${Math.round(item.sfx.gain_db)} dB
+                 <button class="btn btn-sm btn-ghost" data-action="sfx-remove" type="button" aria-label="Hangeffekt eltávolítása">×</button></span>`
+            : `<button class="btn btn-sm btn-ghost" data-action="sfx-add" type="button">♪ Hangeffekt</button>`}
           <button class="btn btn-sm ${item.approved ? "btn-ghost" : "btn-primary"}" data-action="approve" data-approved="${item.approved ? 0 : 1}" type="button">${item.approved ? "Jóváhagyás visszavonása" : "✓ Jóváhagyás"}</button>
         </div>
         ${item.takes && item.takes.length > 1 ? `<div class="qa-takes" role="group" aria-label="Változatok">
           ${item.takes.map((take) => `<span class="qa-take${take.selected ? " is-selected" : ""}">
-            <button class="btn btn-sm btn-ghost" data-action="play" data-url="${esc(take.audio_url)}" type="button">▶ ${take.take === 0 ? "Eredeti" : `${take.take}. változat`}</button>
+            <button class="btn btn-sm btn-ghost" data-action="play" data-url="${esc(take.audio_url)}" type="button">▶ ${take.take === 0 ? "Eredeti" : `${take.take}. változat`}${take.voice_label ? ` · ${esc(take.voice_label)}` : ""}</button>
             ${take.selected ? `<span class="qa-take-current">kiválasztva</span>` : `<button class="btn btn-sm btn-ghost" data-action="select" data-take="${take.take}" type="button">Ezt használom</button>`}
           </span>`).join("")}
         </div>` : ""}
@@ -119,17 +120,17 @@
   }
 
   async function pollJob(jobId) {
-    clearTimeout(pollTimer);
+    const bar = $("qa-progress");
+    const job = await window.Auris.watchJob(jobId, {
+      onUpdate: (update) => {
+        bar.classList.remove("hidden");
+        const total = update.total || 0;
+        $("qa-progress-bar").style.width = total ? `${Math.round((update.done / total) * 100)}%` : "8%";
+        setStatus(update.message || update.state);
+      },
+    });
     try {
-      const list = await api(`/api/jobs?book_id=${BOOK_ID}`);
-      const job = (list.jobs || list).find((item) => item.id === jobId);
-      if (!job) return;
-      const bar = $("qa-progress");
-      bar.classList.remove("hidden");
-      const total = job.total || 0;
-      $("qa-progress-bar").style.width = total ? `${Math.round((job.done / total) * 100)}%` : "8%";
-      setStatus(job.message || job.state);
-      if (["complete", "failed", "cancelled", "interrupted"].includes(job.state)) {
+      if (job) {
         bar.classList.add("hidden");
         $("qa-start").disabled = false;
         const result = job.result || {};
@@ -139,12 +140,10 @@
           setStatus(job.error || job.message || "Az ellenőrzés nem fejeződött be.", "is-error");
         }
         await loadResults();
-        return;
       }
     } catch (error) {
       setStatus(error.message, "is-error");
     }
-    pollTimer = setTimeout(() => pollJob(jobId), 1000);
   }
 
   async function startCheck() {
@@ -209,9 +208,35 @@
       } else if (button.dataset.action === "take") {
         button.disabled = true;
         button.textContent = "Készül…";
-        const data = await api(`${base}/takes`, { method: "POST" });
+        const profileId = Number($("qa-take-voice")?.value || 0);
+        const data = await api(`${base}/takes`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profileId ? { profile_id: profileId } : {}),
+        });
         audio.src = `${data.audio_url}?t=${Date.now()}`;
         audio.play().catch(() => {});
+        await loadResults();
+      } else if (button.dataset.action === "sfx-add") {
+        const picker = $("qa-sfx-file");
+        picker.value = "";
+        picker.onchange = async () => {
+          const file = picker.files[0];
+          if (!file) return;
+          const form = new FormData();
+          form.append("file", file);
+          form.append("position", $("qa-sfx-position").value);
+          form.append("gain_db", $("qa-sfx-gain").value);
+          try {
+            await api(`${base}/sfx`, { method: "POST", body: form });
+            setStatus("A hangeffekt a mondathoz került; az exportban szól.", "is-ok");
+            await loadResults();
+          } catch (error) {
+            setStatus(error.message, "is-error");
+          }
+        };
+        picker.click();
+      } else if (button.dataset.action === "sfx-remove") {
+        await api(`${base}/sfx`, { method: "DELETE" });
         await loadResults();
       } else if (button.dataset.action === "select") {
         await api(`${base}/select-take`, {
@@ -234,6 +259,16 @@
 
   const params = new URLSearchParams(location.search);
   if (params.get("chapter")) $("qa-chapter").value = params.get("chapter");
+  // Saved voice profiles can voice an alternative take of any sentence.
+  api("/api/voice-profiles").then((profiles) => {
+    const select = $("qa-take-voice");
+    (Array.isArray(profiles) ? profiles : profiles.profiles || []).forEach((profile) => {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = `Hangprofil: ${profile.name}`;
+      select.appendChild(option);
+    });
+  }).catch(() => {});
   $("qa-chapter").addEventListener("change", () => {
     $("qa-loudness-report").classList.add("hidden");
     loadResults();

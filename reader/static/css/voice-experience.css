@@ -539,3 +539,6 @@
 .assist-row p { margin: 4px 0 0; font-size: .82rem; }
 .assist-row code { overflow-wrap: anywhere; }
 .assist-suggestions > .btn { margin-top: 8px; }
+
+.reference-clean { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2);
+  font-size: var(--text-sm); color: var(--text2); cursor: pointer; }

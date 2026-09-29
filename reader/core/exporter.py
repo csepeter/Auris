@@ -29,6 +29,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from core import sfx
+
 log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24_000
@@ -376,6 +378,7 @@ def _write_merged_wav(segments: list[dict], path: str) -> float:
         if seg.get('audio_path') and os.path.exists(seg['audio_path'])
     ]
     frames = 0
+    cues = []
     with sf.SoundFile(path, 'w', samplerate=SAMPLE_RATE, channels=1,
                       format='RF64', subtype='PCM_16') as out:
         if not playable:
@@ -388,6 +391,7 @@ def _write_merged_wav(segments: list[dict], path: str) -> float:
         for idx, seg in enumerate(playable):
             audio = read_segment_audio(seg['audio_path'], trim=trim)
             seg['t_start'] = frames / SAMPLE_RATE
+            cues.append(sfx.cue(seg, frames))
             out.write(audio)
             frames += len(audio)
             seg['t_end'] = frames / SAMPLE_RATE
@@ -402,6 +406,8 @@ def _write_merged_wav(segments: list[dict], path: str) -> float:
             tail = silence(int(SAMPLE_RATE * ROOM_TONE_TAIL_SEC), True, 0)
             out.write(tail)
             frames += len(tail)
+    # Sound effects are mixed in place, so every timing above stays valid.
+    sfx.overlay(path, cues)
     return frames / SAMPLE_RATE
 
 
@@ -744,7 +750,7 @@ def export_m4b(book_title, chapters_data, character_colors=None, *, sub_fmt='non
 def parse_chapter_selection(selection: str | None, chapter_count: int) -> list[int]:
     """Parse print-style chapter numbers such as ``1,3,5-8``."""
     if chapter_count < 1:
-        raise ValueError('This book has no chapters to export.')
+        raise ValueError('A könyvben nincs exportálható fejezet.')
 
     value = (selection or '').strip().lower()
     if value in ('', '*', 'all', 'mind', 'összes'):
@@ -754,25 +760,25 @@ def parse_chapter_selection(selection: str | None, chapter_count: int) -> list[i
     for item in value.split(','):
         item = item.strip()
         if not item:
-            raise ValueError('Empty item in chapter selection.')
+            raise ValueError('Üres elem a fejezetkijelölésben.')
         match = re.fullmatch(r'(\d+)\s*-\s*(\d+)', item)
         if match:
             start, end = (int(part) for part in match.groups())
             if start > end:
-                raise ValueError(f'Invalid descending chapter range: {item}')
+                raise ValueError(f'Csökkenő fejezettartomány nem megengedett: {item}')
             chosen.update(range(start, end + 1))
         elif item.isdigit():
             chosen.add(int(item))
         else:
             raise ValueError(
-                'Use chapter numbers, commas and ranges, for example: 1,3,5-8.'
+                'Fejezetszámokat, vesszőt és tartományt adj meg, például: 1,3,5-8.'
             )
 
     invalid = sorted(number for number in chosen if not 1 <= number <= chapter_count)
     if invalid:
         raise ValueError(
-            f'Chapter number out of range: {invalid[0]} '
-            f'(valid range: 1-{chapter_count}).'
+            f'Nem létező fejezetszám: {invalid[0]} '
+            f'(érvényes tartomány: 1–{chapter_count}).'
         )
     return sorted(chosen)
 

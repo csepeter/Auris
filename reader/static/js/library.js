@@ -728,6 +728,17 @@ function initLibrary() {
       updateWelcome();
     })
     .catch(() => {});
+  // Book cards follow server events; the slow timer only covers missed events.
+  let queued = null;
+  const refreshSoon = () => {
+    if (queued || document.hidden) return;
+    queued = setTimeout(() => { queued = null; loadBooks(); }, 600);
+  };
+  if (window.Auris?.onEvent) {
+    window.Auris.onEvent("jobs", (data) => {
+      if ((data.changed || []).length || (data.finished || []).length) refreshSoon();
+    });
+  }
   setInterval(() => {
     if (document.hidden) return;
     if (
@@ -735,7 +746,7 @@ function initLibrary() {
       libraryBooks.some((b) => ["queued", "running"].includes(b.character_analysis_status))
     )
       loadBooks();
-  }, 4000);
+  }, window.EventSource ? 20000 : 4000);
 
   api("/api/import/tools")
     .then((tools) => {

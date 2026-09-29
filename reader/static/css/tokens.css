@@ -34,6 +34,9 @@
   --color-warning-bg: color-mix(in srgb, var(--color-warning) 14%, transparent);
   --color-danger-bg: color-mix(in srgb, var(--color-danger) 14%, transparent);
 
+  /* code and file names; small UI labels use --ui-font with tabular figures */
+  --mono-font: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
   --transition-fast: 120ms ease;
 }

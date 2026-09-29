@@ -635,6 +635,8 @@ ffprobe -version</code></pre>
           </tbody>
         </table>
       </div>
+      <h3>Referenciahang tisztítása</h3>
+      <p>A hangklónozás mindent lemásol a referenciából: a zúgást, a szobazajt, a hosszú csendet és a hangerőt is. Feltöltéskor és mikrofonos felvételnél ezért alapból bekapcsolt a <strong>Zajszűrés, csendvágás és hangerő-kiegyenlítés</strong>: 70 Hz alatti zaj és hálózati zúgás szűrése, egyenletes háttérzaj csökkentése, a felvétel eleji és végi csend levágása 0,15 másodpercre, −20 LUFS-es hangerő, mono 24 kHz. A tisztítás nem rontja az érthetőséget (saját mérés: a beszédfelismerés ugyanazt hallotta ki a zajos és a tisztított felvételből). Stúdióban készült, már tiszta felvételnél kikapcsolható. Ha az ffmpeg hiányzik vagy a tisztítás nem sikerül, az eredeti felvétel kerül mentésre.</p>
       <div class="docs-two-column" style="margin-top:28px">
         <div>
           <h3>Mentett hangprofilok</h3>
@@ -737,7 +739,7 @@ ffprobe -version</code></pre>
             <tr><td>Speech quality</td><td>12/16/24/32 iteratív dekódolási lépés; több lépés lassabb és finomabb.</td><td><strong>16</strong></td></tr>
             <tr><td>GPU batch size</td><td>Egy generate hívásban együtt, de külön hullámformaként feldolgozott szövegegységek száma.</td><td><strong>Auto</strong></td></tr>
             <tr><td>Exact spoken-line boundaries</td><td>Minden szövegegység külön hangfájlt kap; nincs karakterszám alapján visszavágott, összekevert rövid sor.</td><td><strong>Bekapcsolva</strong></td></tr>
-            <tr><td>GPU-gyorsítás</td><td>Alap vagy optimalizált PyTorch, NVIDIA CUDA Graph, kísérleti Triton/hibrid.</td><td>Automatikus; munkaterhelésenként mérendő</td></tr>
+            <tr><td>GPU-gyorsítás</td><td>Alap vagy optimalizált PyTorch, NVIDIA CUDA Graph, Triton és hibrid (Triton + CUDA Graph).</td><td>Automatikus; munkaterhelésenként mérendő</td></tr>
             <tr><td>Parallel export workers</td><td>Második modell csak nagyobb voice-clone export idejére; a referenciaklippel rögzített leírt hangok is ide tartoznak.</td><td><strong>Auto</strong></td></tr>
             <tr><td>Leírt hangok rögzítése</td><td>A leírásból egyszer referenciaklip készül, a szakaszok ezt klónozzák.</td><td><strong>Bekapcsolva</strong></td></tr>
           </tbody>
@@ -1017,8 +1019,11 @@ ffprobe -version</code></pre>
             <li>A <strong>Jóváhagyás</strong> jelzi, hogy a mondatot meghallgattad. A <strong>Jóváhagyásra vár</strong> szűrő a még ellenőrizetlen mondatokat mutatja.</li>
           </ol>
           <p>Új változatot az OmniVoice, a Higgs és a két MOSS motor tud adni; a Supertonic és a Piper ugyanarra a szövegre mindig ugyanazt a hangot adja.</p>
+          <p><strong>Változat másik hanggal:</strong> az <strong>Új változat hangja</strong> mezőben bármelyik mentett hangprofil választható. Az új változat ezzel a hanggal készül, a jelölése a profil nevét is mutatja (pl. <em>2. változat · Mély mesélő</em>), és ugyanúgy kiválasztható vagy elvethető. Így egy-egy mondatot kipróbálhatsz más hangon a szereplő átállítása nélkül. A beszédmotor nem cserélhető mondatonként, mert egyszerre egy motor van betöltve.</p>
         </div>
       </div>
+      <h3>Hangeffektek</h3>
+      <p>Gyerekkönyvhöz vagy hangjátékhoz mondatonként egy hangeffekt csatolható a <strong>♪ Hangeffekt</strong> gombbal (WAV, MP3, OGG, Opus, FLAC vagy M4A, legfeljebb 30 másodperc). A <strong>Hangeffekt helye</strong> lehet <em>a mondattal együtt</em> (a mondat elején indul, a beszéd alatt szól) vagy <em>a mondat előtti szünetben</em> (a mondat kezdetére ér véget; a szünetnél hosszabb effekt az előző mondatba is belelóg). A hangerő −3 és −20 dB között választható. Az effekt az exportban szól (fejezetfájl, M4B, felolvasós EPUB3, Audiobookshelf- és kiadói csomag; a hangszerkesztő-csomag beszélőnkénti sávjaiban nem); a mondat, a felirat és a szókiemelés időzítése nem változik. A könyvszintű háttérzene a Kiadási csomagok résznél állítható.</p>
       <h3>Hangerő-jelentés</h3>
       <p>A <strong>Hangerő-jelentés</strong> a fejezet teljes hangját méri a mastering előtt és után: átlagos hangerő (RMS), csúcs, zajszint, EBU R128 integrált hangosság és true peak, valamint az ACX-követelmények teljesülése (RMS −23 és −18 dB között, csúcs legfeljebb −3 dB, zajszint legfeljebb −60 dB, legfeljebb 120 perc). Az ACX mesterséges hangot nem fogad el; a jelentés csak technikai mérce.</p>
       <h3>Egyenletes szünetek és szobazaj</h3>
@@ -1333,9 +1338,21 @@ ffprobe -version</code></pre>
         </table>
       </div>
       <p>Az <strong>Alap PyTorch</strong> opció is GPU-n fut, ha az rendelkezésre áll;
-        csak az extra OmniVoice-optimalizálásokat tiltja le. A Triton/hibrid mód
-        kísérleti, nem automatikus választás. A Higgs külön motor: az OmniVoice
+        csak az extra OmniVoice-optimalizálásokat tiltja le. A Higgs külön motor: az OmniVoice
         gyorsítási módjai és az alábbi benchmark nem vonatkoznak rá.</p>
+      <h3>Triton és hibrid mód (NVIDIA)</h3>
+      <p>A <strong>Beállítások → GPU-gyorsítás → Triton-gyorsítás telepítése</strong> gomb
+        (vagy telepítéskor az <code>AURIS_TRITON=1</code> környezeti változó) a PyTorch-verzióhoz
+        illő Triton fordítót teszi fel; Windowson a <code>triton-windows</code> csomagot, amely
+        saját C-fordítót hoz. A kerneleket az Auris tartalmazza, Python 3.11-en is működnek.
+        Telepítés után válaszd a <strong>Hibrid</strong> módot, és töltsd újra a beszédmotort.</p>
+      <p>RTX 3090-en, Windows 11-en, 36 magyar mondaton (négyes kötegek, 16 lépés) mérve a
+        bemelegített valós idejű tényező: optimalizált PyTorch 0,085, CUDA Graph 0,08–0,09,
+        csak Triton 0,068, hibrid 0,065–0,068. A beszédfelismeréssel mért karakterhiba
+        (CER) azonos maradt (5,6% és 5,8%, ugyanazok a hibás mondatok). A Triton a kerekítés
+        miatt nem bitazonos hangot ad, ezért a már elkészült hangok cache-e érvényes marad,
+        de az újrageneráltak kissé eltérhetnek. Az Automatikus mód továbbra is a CUDA Graphot
+        választja; a hibrid módot tudatosan kell bekapcsolni.</p>
       <p>AMD-n először a <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/">gyártó kompatibilitási útmutatója</a>
         szerinti ROCm PyTorch/torchaudio párost telepítsd az Auris környezetébe.
         A telepítő a működő ROCm-környezetet felismeri és megőrzi; önállóan nem

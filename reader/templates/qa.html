@@ -20,6 +20,26 @@
     </label>
     <label class="checkbox-label"><input type="checkbox" id="qa-asr" checked> Beszédfelismerés (Whisper)</label>
     <label class="checkbox-label"><input type="checkbox" id="qa-regenerate" checked> Hibás mondatok automatikus újragenerálása</label>
+    <label class="qa-field">Új változat hangja
+      <select id="qa-take-voice" class="select-input">
+        <option value="">A szereplő saját hangja</option>
+      </select>
+    </label>
+    <label class="qa-field">Hangeffekt helye
+      <select id="qa-sfx-position" class="select-input">
+        <option value="with">A mondattal együtt</option>
+        <option value="before">A mondat előtti szünetben</option>
+      </select>
+    </label>
+    <label class="qa-field">Hangeffekt hangereje
+      <select id="qa-sfx-gain" class="select-input">
+        <option value="-3">Hangos (−3 dB)</option>
+        <option value="-8" selected>Közepes (−8 dB)</option>
+        <option value="-14">Halk (−14 dB)</option>
+        <option value="-20">Nagyon halk (−20 dB)</option>
+      </select>
+    </label>
+    <input type="file" id="qa-sfx-file" accept=".wav,.mp3,.ogg,.opus,.flac,.m4a,audio/*" hidden>
     <button id="qa-start" class="btn btn-primary" type="button">Fejezet ellenőrzése</button>
     <button id="qa-loudness" class="btn btn-ghost" type="button">Hangerő-jelentés</button>
   </section>

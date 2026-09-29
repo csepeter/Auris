@@ -7,21 +7,17 @@ Two layers (can be combined):
    the iterative unmasking steps. Benefit depends on shape reuse and workload;
    measure cold capture separately from warm replay.
 
-2. **Triton kernels** (Linux / WSL2; optional native Windows via triton-windows)
-   Fuses RMSNorm / SwiGLU / residual+norm via ``omnivoice-triton``.
-   Alone ~1.0–1.2x; with CUDA Graph (hybrid) up to ~3x.
+2. **Triton kernels** (Linux, WSL2 and native Windows via triton-windows)
+   Fuses RMSNorm / SwiGLU / residual+norm with the omnivoice-triton kernels
+   vendored in ``core/vendor/omnivoice_triton`` (upstream declares Python
+   ≥3.12 only, but the kernels run on 3.11).
+   Measured on an RTX 3090 (Python 3.11, torch 2.11, Hungarian batches):
+   RTF 0.085 eager → 0.068 Triton → 0.065 hybrid, with the same ASR CER.
 
-Install (optional)::
-
-    # CUDA Graph needs nothing extra.
-
-    # Triton on WSL2 / Linux:
-    pip install omnivoice-triton
-
-    # Triton on native Windows (community wheels):
-    pip install triton-windows
-    pip install omnivoice-triton --no-deps
-    pip install sageattention  # optional; often unused with masks
+Install (optional): Settings → GPU acceleration → "Install Triton", or
+``AURIS_TRITON=1`` during setup. Only the Triton compiler itself is
+installed; ``triton_install_commands`` picks the triton-windows build that
+matches the installed torch.
 """
 
 from __future__ import annotations
@@ -324,11 +320,61 @@ def triton_available() -> bool:
 
 def omnivoice_triton_available() -> bool:
     try:
-        from omnivoice_triton.models.patching import apply_triton_kernels  # noqa: F401
+        from core.vendor.omnivoice_triton.patching import apply_triton_kernels  # noqa: F401
 
         return True
     except (ImportError, OSError, RuntimeError):
         return False
+
+
+def triton_install_commands(torch_version: str, system: str) -> list[list[str]]:
+    """pip argument lists that add the Triton compiler for this torch build.
+
+    triton-windows tracks torch minor versions (torch 2.6 → triton 3.2, …,
+    torch 2.11 → triton 3.7). On Linux the CUDA torch wheels already depend
+    on the matching ``triton``.
+    """
+    import re
+
+    match = re.match(r"(\d+)\.(\d+)", str(torch_version or ""))
+    if not match:
+        raise ValueError("Ismeretlen PyTorch-verzió.")
+    major, minor = int(match.group(1)), int(match.group(2))
+    commands: list[list[str]] = []
+    if system == "Windows":
+        if major != 2 or minor < 6:
+            raise ValueError("A Triton Windowson PyTorch 2.6 vagy újabb verziót igényel.")
+        triton_minor = minor - 4
+        commands.append([f"triton-windows>=3.{triton_minor},<3.{triton_minor + 1}"])
+    elif not triton_available():
+        commands.append(["triton"])
+    return commands
+
+
+def install_triton(python: str | None = None) -> dict:
+    """Install Triton kernels into the running environment (NVIDIA only)."""
+    import importlib
+    import platform
+    import subprocess
+    import sys
+
+    probe = probe_accel()
+    if probe.get("backend") != "cuda":
+        return {"ok": False, "message": "A Triton-gyorsítás NVIDIA GPU-t igényel."}
+    try:
+        commands = triton_install_commands(probe.get("torch_version", ""), platform.system())
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc)}
+    for args in commands:
+        result = subprocess.run([python or sys.executable, "-m", "pip", "install", *args],
+                                capture_output=True, text=True)
+        if result.returncode:
+            return {"ok": False, "message": (result.stderr or result.stdout)[-600:]}
+    importlib.invalidate_caches()
+    ready = triton_available() and omnivoice_triton_available()
+    return {"ok": ready, "message": (
+        "Telepítve. Válaszd a Hibrid módot, mentsd a beállítást, majd töltsd újra a beszédmotort."
+        if ready else "A csomagok települtek, de a Triton nem tölthető be; indítsd újra az Aurist.")}
 
 
 def probe_accel() -> dict:
@@ -398,12 +444,12 @@ def resolve_accel_mode(requested: str | None) -> str:
 def apply_triton_to_omnivoice(model) -> bool:
     """Apply omnivoice-triton kernel patches to ``model.llm``. Returns success."""
     try:
-        from omnivoice_triton.models.patching import (
+        from core.vendor.omnivoice_triton.patching import (
             apply_triton_kernels,
             find_patchable_model,
         )
     except ImportError as exc:
-        log.info("omnivoice-triton not installed (%s)", exc)
+        log.info("Triton kernels unavailable (%s)", exc)
         return False
 
     try:

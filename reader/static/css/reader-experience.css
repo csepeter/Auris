@@ -145,7 +145,7 @@
 
 .pb-remaining {
   color: var(--text3);
-  font: .7rem/1.2 'Courier New', monospace;
+  font: .72rem/1.2 var(--ui-font); font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -329,7 +329,7 @@
 }
 .pron-dialog {
   position: fixed; z-index: 70; right: 24px; bottom: 96px; width: min(380px, calc(100vw - 32px));
-  background: var(--surface, #242424); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
   padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
 }
 .pron-dialog label { display: flex; flex-direction: column; gap: 4px; font-size: .84rem; color: var(--text2); }
@@ -339,8 +339,8 @@
 .pron-note { margin: 0; font-size: .76rem; }
 .pron-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .pron-status { margin: 0; font-size: .82rem; min-height: 1.2em; }
-.pron-status.is-error { color: #e57373; }
-.pron-status.is-ok { color: #6ec890; }
+.pron-status.is-error { color: var(--color-danger); }
+.pron-status.is-ok { color: var(--color-success); }
 
 /* Chapter timeline in the player bar */
 .pb-timeline { display: flex; align-items: center; gap: var(--space-2); width: min(520px, 100%); }

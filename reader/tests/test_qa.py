@@ -79,6 +79,7 @@ class _ToneEngine:
 
     def generate(self, text="", take=0, **kw):
         self.generated.append((text, take))
+        self.last_voice = {key: kw.get(key) for key in ("instruct", "ref_audio", "ref_text")}
         key = f"k{abs(hash((text, take))) % 10**12}"
         path = os.path.join(self.folder, key + ".wav")
         # Take 0 is silent (a failed render); later takes are fine.
@@ -161,6 +162,18 @@ class QaApiTest(unittest.TestCase):
         data = self.client.get("/api/books/1/chapters/1/qa").get_json()
         self.assertTrue(data["segments"][0]["approved"])
         self.assertEqual(data["summary"]["approved"], 1)
+
+    def test_take_in_another_saved_voice_is_labelled(self):
+        with database.get_conn() as conn:
+            conn.execute("INSERT INTO voice_profiles (id,name,instruct) VALUES (4,'Mély mesélő','male, elderly, low pitch')")
+        response = self.client.post("/api/books/1/chapters/1/segments/0/takes", json={"profile_id": 4})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(self.engine.last_voice["instruct"], "male, elderly, low pitch")
+        self.assertIsNone(self.engine.last_voice["ref_audio"])
+        takes = self.client.get("/api/books/1/chapters/1/qa").get_json()["segments"][0]["takes"]
+        self.assertEqual([t["voice_label"] for t in takes if t["take"] == 1], ["Mély mesélő"])
+        missing = self.client.post("/api/books/1/chapters/1/segments/0/takes", json={"profile_id": 99})
+        self.assertEqual(missing.status_code, 400)
 
 
 if __name__ == "__main__":

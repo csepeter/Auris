@@ -108,7 +108,7 @@ DEFAULTS: dict = {
     # Inference acceleration: off | auto | eager | cuda_graph | triton | hybrid
     # Auto: NVIDIA CUDA Graph; ROCm/MPS/CPU portable scoring optimization.
     # cuda_graph = pure PyTorch; speed depends on workload and shape reuse.
-    # triton/hybrid need omnivoice-triton (+ triton or triton-windows).
+    # triton/hybrid need the Triton compiler (triton or triton-windows); the kernels are vendored.
     'tts_accel': 'auto',
 
     # Parallel model replicas for export: 0 = auto, 1 = off, 2 = dual worker.
@@ -422,7 +422,7 @@ def start_model_download(repo_id: str, dest_dir: str, hf_endpoint: str = '') -> 
 
 
 def _do_download(repo_id: str, dest_dir: str, hf_endpoint: str):
-    _set_dl('downloading', 0, f'Connecting to HuggingFace for {repo_id}…', dest_dir)
+    _set_dl('downloading', 0, f'Kapcsolódás a HuggingFace-hez ({repo_id})…', dest_dir)
     try:
         if hf_endpoint:
             os.environ['HF_ENDPOINT'] = hf_endpoint
@@ -430,12 +430,12 @@ def _do_download(repo_id: str, dest_dir: str, hf_endpoint: str):
         from huggingface_hub import list_repo_files, hf_hub_download
         import huggingface_hub
 
-        _set_dl('downloading', 2, 'Listing repository files…', dest_dir)
+        _set_dl('downloading', 2, 'A tároló fájljainak listázása…', dest_dir)
 
         files = list(list_repo_files(repo_id))
         total = len(files)
         if total == 0:
-            _set_dl('error', 0, 'No files found in repository.', dest_dir)
+            _set_dl('error', 0, 'A tárolóban nincs letölthető fájl.', dest_dir)
             return
 
         dest = Path(dest_dir)
@@ -443,14 +443,14 @@ def _do_download(repo_id: str, dest_dir: str, hf_endpoint: str):
 
         for i, filename in enumerate(files):
             pct = int((i / total) * 95)
-            _set_dl('downloading', pct, f'Downloading {filename} ({i+1}/{total})…', dest_dir)
+            _set_dl('downloading', pct, f'Letöltés: {filename} ({i+1}/{total})…', dest_dir)
             hf_hub_download(
                 repo_id=repo_id,
                 filename=filename,
                 local_dir=str(dest),
             )
 
-        _set_dl('done', 100, f'Download complete → {dest_dir}', dest_dir)
+        _set_dl('done', 100, f'A letöltés kész → {dest_dir}', dest_dir)
 
         # Persist the new model path in settings
         save({'model_path': dest_dir, 'model_source': 'local'})

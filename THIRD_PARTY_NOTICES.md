@@ -66,6 +66,19 @@ downloaded at runtime from `supertone-oss-archive/supertonic-3` and are
 licensed under the BigScience OpenRAIL-M license, which includes use-based
 restrictions that users must follow.
 
+## omnivoice-triton kernels (vendored)
+
+`reader/core/vendor/omnivoice_triton/` contains the Triton kernels and
+`models/patching.py` of omnivoice-triton 0.1.0 (package-internal imports made
+relative):
+
+https://github.com/newgrit1004/omnivoice-triton
+
+Copyright Sewon Kim. Licensed under the Apache License, Version 2.0; the full
+text is in `reader/core/vendor/omnivoice_triton/LICENSE`. The optional Triton
+compiler (`triton`, or `triton-windows` on Windows, MIT) is installed by the
+user from Settings.
+
 ## Piper and Hungarian Piper voices (optional)
 
 The optional Piper engine uses the `piper-tts` package (piper1-gpl,

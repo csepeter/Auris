@@ -44,7 +44,11 @@
 (function () {
   const badge = document.getElementById('model-badge');
   const listeners = {engine: [], jobs: []};
-  Auris.onEvent = (name, handler) => { (listeners[name] = listeners[name] || []).push(handler); };
+  Auris.onEvent = (name, handler) => {
+    const list = (listeners[name] = listeners[name] || []);
+    list.push(handler);
+    return () => { const at = list.indexOf(handler); if (at >= 0) list.splice(at, 1); };
+  };
   function showEngine(s) {
     if (!badge) return;
     badge.className = 'badge';

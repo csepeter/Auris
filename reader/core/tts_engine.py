@@ -605,7 +605,7 @@ class TTSEngine:
                 accel.update(
                     cuda_graph=False,
                     effective='triton' if accel.get('triton') else 'eager',
-                    message='CUDA Graph fallback: ' + wrapper.disabled_reason,
+                    message='CUDA Graph kikapcsolva: ' + wrapper.disabled_reason,
                 )
             return {
                 "state": "ready",

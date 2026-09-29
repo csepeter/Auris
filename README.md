@@ -53,6 +53,10 @@ labels and the updated workflows described below and in the built-in help.
   loudness checks and measured word timings for highlighting.
 - Publishing packages: EPUB3 read-along, Audiobookshelf folder/upload,
   distribution MP3 with sample, DAW stems; Opus/FLAC; credits and background music.
+- Reference clean-up for voice cloning, takes in another saved voice, and
+  per-sentence sound effects.
+- Optional Triton kernels (Windows and Linux, Python 3.11) for about 25% faster
+  OmniVoice generation on NVIDIA GPUs.
 - Installable, phone-friendly interface with offline playback of cached audio,
   live updates over one server-event stream, a chapter timeline and keyboard
   shortcuts (J/L seek, [ ] speed).

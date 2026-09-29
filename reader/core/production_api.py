@@ -131,6 +131,7 @@ def run_book_generation(job_id: str, book_id: int, chapter_ids: list[int]) -> No
     try:
         job.update(state="running", message="Fejezetek betöltése…")
         application._persist_job(job)
+        application._wait_for_engine(job)
         segments = []
         for chapter_id in chapter_ids:
             application._check_job_cancelled(job)
@@ -167,9 +168,8 @@ def start_book_generation(book_id):
     wanted = [int(c) for c in (data.get("chapter_ids") or all_ids) if int(c) in set(all_ids)]
     if not wanted:
         return jsonify(error="Nincs generálható fejezet."), 400
-    if application.tts.status().get("state") != "ready":
-        application.tts.load_async()
-        return jsonify(error="A beszédmotor betöltése elindult; próbáld újra, ha kész."), 503
+    if application.tts.status().get("state") == "not_loaded":
+        application.tts.load_async()  # the job waits for it
     with application._work_dispatch_lock:
         conflict = application._work_conflict_response()
         if conflict is not None:

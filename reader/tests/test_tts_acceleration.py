@@ -105,5 +105,30 @@ class AccelerationTest(unittest.TestCase):
                 self.assertTrue(torch.equal(scores, p.max(dim=-1).values))
 
 
+class TritonInstallCommandsTest(unittest.TestCase):
+    def test_windows_picks_matching_triton_windows(self):
+        self.assertEqual(accel.triton_install_commands('2.11.0+cu128', 'Windows'),
+                         [['triton-windows>=3.7,<3.8']])
+        self.assertEqual(accel.triton_install_commands('2.6.0', 'Windows'),
+                         [['triton-windows>=3.2,<3.3']])
+
+    def test_old_torch_on_windows_is_rejected(self):
+        with self.assertRaises(ValueError):
+            accel.triton_install_commands('2.5.1', 'Windows')
+        with self.assertRaises(ValueError):
+            accel.triton_install_commands('', 'Linux')
+
+    def test_linux_installs_triton_only_when_missing(self):
+        with patch.object(accel, 'triton_available', return_value=True):
+            self.assertEqual(accel.triton_install_commands('2.11.0', 'Linux'), [])
+        with patch.object(accel, 'triton_available', return_value=False):
+            self.assertEqual(accel.triton_install_commands('2.11.0', 'Linux'), [['triton']])
+
+    def test_install_refuses_without_nvidia(self):
+        with patch.object(accel, 'probe_accel', return_value={'backend': 'cpu'}):
+            result = accel.install_triton()
+        self.assertFalse(result['ok'])
+
+
 if __name__ == '__main__':
     unittest.main()

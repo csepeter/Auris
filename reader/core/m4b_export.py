@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from core import sfx
+
 
 def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
            book_author='Unknown', mastering=False, book_metadata=None,
@@ -67,7 +69,7 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
             if not segments:
                 raise ValueError('Üres fejezet nem exportálható.')
             piece = work / f'chapter-{ci:05d}.wav'
-            local, cursor = [], 0
+            local, cursor, cues = [], 0, []
             with sf.SoundFile(piece, 'w', samplerate=e.SAMPLE_RATE, channels=1,
                               format='RF64', subtype='PCM_16') as out:
                 for si, segment in enumerate(segments):
@@ -84,6 +86,7 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
                         if source.samplerate != e.SAMPLE_RATE or not len(source):
                             raise ValueError('Érvénytelen mondathang vagy mintavételi frekvencia.')
                     audio = e.read_segment_audio(path, trim=trim)
+                    cues.append(sfx.cue(segment, seg_start))
                     out.write(audio)
                     cursor += len(audio)
                     local.append((segment, seg_start, cursor))
@@ -97,6 +100,7 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
                         out.write(gap)
                         cursor += len(gap)
                     done += 1
+            sfx.overlay(str(piece), cues)
             pieces.append([piece, cursor, local,
                            chapter.get('chapter_title') or f'Fejezet {ci + 1}'])
         report(f'Hangok összefűzése: {total}/{total}')

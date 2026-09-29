@@ -62,13 +62,10 @@ function optionLabel(value) {
   return OPTION_LABELS[value] || value;
 }
 
+// Shared escaper from common.js (required directly under Node tests).
+const sharedEsc = studioWindow.Auris?.esc || require("./common.js").esc;
 function esc(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return sharedEsc(value);
 }
 
 function icon(name) {
@@ -945,6 +942,7 @@ function referenceSectionHtml(character) {
       <button id="remove-ref-${id}" class="btn btn-sm btn-ghost" type="button" data-action="remove-ref"${hasRef ? "" : " disabled"}>Referencia törlése</button>
     </div>
     <div class="recorder" id="rec-${id}" hidden></div>
+    <label class="reference-clean"><input type="checkbox" id="ref-clean-${id}" checked> Zajszűrés, csendvágás és hangerő-kiegyenlítés feltöltéskor</label>
     <p class="studio-note">Tiszta, egyetlen beszélőt tartalmazó, 3–10 másodperces magyar felvétel ajánlott.</p>
   </section>`;
 }
@@ -1000,6 +998,8 @@ async function uploadReferenceFile(refKey, file) {
   const form = new FormData();
   form.append("file", file);
   form.append("ref_text", refTextField(refKey)?.value.trim() || "");
+  const clean = studioDocument?.getElementById(`ref-clean-${refKey}`);
+  form.append("clean", !clean || clean.checked ? "1" : "0");
   const data = await requestJson(refEndpoint(refKey), { method: "POST", body: form });
   applyUploadedReference(refKey, data);
   return data;
@@ -1620,6 +1620,24 @@ async function bulkApplyProfile(button) {
   });
 }
 
+// Reload once the background character analysis finishes (server events),
+// with a slow fallback check instead of a tight polling loop.
+let analysisWatch = null;
+function waitForCharacterAnalysis() {
+  if (analysisWatch) return;
+  const reload = () => {
+    if (!analysisWatch) return;
+    clearTimeout(analysisWatch.timer);
+    if (analysisWatch.off) analysisWatch.off();
+    analysisWatch = null;
+    loadCharacters();
+  };
+  const off = studioWindow.Auris?.onEvent?.("jobs", (data) => {
+    if ((data.finished || []).some((job) => job.book_id === BOOK_ID)) reload();
+  }) || null;
+  analysisWatch = { off, timer: setTimeout(reload, off ? 10000 : 1500) };
+}
+
 async function loadCharacters() {
   const chapterFilter = document.getElementById("chapter-character-filter");
   const filterActive = Boolean(chapterFilter?.checked && CURRENT_CHAPTER_ID);
@@ -1633,7 +1651,7 @@ async function loadCharacters() {
       if (list) list.innerHTML = `<div class="voice-empty">${esc(analysis.message || "Nem található szereplő.")}</div>`;
       renderSourceSummary([]);
       syncBulkBar();
-      if (active) setTimeout(loadCharacters, 1500);
+      if (active) waitForCharacterAnalysis();
       return;
     }
     renderCharacters(loadedCharacters, filterActive);

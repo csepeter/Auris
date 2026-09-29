@@ -320,6 +320,15 @@ def engine_install():
     return jsonify({'ok': True, 'message': 'Telepítve. Mentsd a beállítást, majd töltsd újra a beszédmotort.'})
 
 
+@bp.route('/api/settings/triton-install', methods=['POST'])
+def triton_install():
+    """Add the optional Triton kernels (NVIDIA) to the Auris environment."""
+    from core import tts_accel
+
+    result = tts_accel.install_triton()
+    return jsonify(result), (200 if result['ok'] else 500)
+
+
 @bp.route('/api/settings/spacy-install', methods=['POST'])
 def spacy_install():
     body = request.get_json(silent=True) or {}

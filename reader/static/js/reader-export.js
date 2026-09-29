@@ -277,13 +277,7 @@ document.getElementById('do-export-btn').onclick = async () => {
     let clientT0 = Date.now();
     let clientDone0 = null;
 
-    while (true) {
-      await new Promise(res => setTimeout(res, 500));
-      let sr;
-      try { sr = await fetch(`/api/export/status/${jobId}`).then(r => r.json()); }
-      catch(_) { continue; }
-      if (sr.error && !sr.state) sr.state = 'failed';
-
+    const showProgress = (sr) => {
       if (sr.total > 0) {
         const pct = Math.min(Math.round((sr.done / sr.total) * 95), 95);
         progFill.style.width = pct + '%';
@@ -310,21 +304,20 @@ document.getElementById('do-export-btn').onclick = async () => {
       }
 
       status.textContent = formatExportStatus(sr);
+    };
 
-      if (sr.state === 'complete') {
-        progFill.style.width = '100%';
-        const res = sr.result || {};
-        renderExportLinks(res, jobId);
-        finish('Az export elkészült. A fájlok lent tölthetők le.' +
-          (res.mastering_warning ? ' A hangerő-kiegyenlítés kimaradt: ' + res.mastering_warning : ''));
-        break;
-      } else if (sr.state === 'failed') {
-        finish('Az export nem sikerült: ' + (sr.error || 'Ismeretlen hiba'));
-        break;
-      } else if (['cancelled', 'interrupted'].includes(sr.state)) {
-        finish(sr.state === 'cancelled' ? 'Az export leállítva. A Feladatok oldalon folytathatod.' : 'Az export megszakadt. A Feladatok oldalon folytathatod.');
-        break;
-      }
+    // Progress follows server events; no fixed-interval polling.
+    const sr = await Auris.watchJob(jobId, { url: `/api/export/status/${jobId}`, onUpdate: showProgress });
+    if (sr.state === 'complete') {
+      progFill.style.width = '100%';
+      const res = sr.result || {};
+      renderExportLinks(res, jobId);
+      finish('Az export elkészült. A fájlok lent tölthetők le.' +
+        (res.mastering_warning ? ' A hangerő-kiegyenlítés kimaradt: ' + res.mastering_warning : ''));
+    } else if (sr.state === 'failed') {
+      finish('Az export nem sikerült: ' + (sr.error || 'Ismeretlen hiba'));
+    } else {
+      finish(sr.state === 'cancelled' ? 'Az export leállítva. A Feladatok oldalon folytathatod.' : 'Az export megszakadt. A Feladatok oldalon folytathatod.');
     }
   } catch(e) {
     finish(e.message);

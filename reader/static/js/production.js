@@ -85,24 +85,17 @@
 
   async function watch(jobId) {
     watchedJob = jobId;
-    for (;;) {
-      let job;
-      try { job = await api(`/api/jobs/${jobId}`); } catch (_) { break; }
-      showJob(job);
-      if (['complete', 'failed', 'cancelled', 'interrupted'].includes(job.state)) {
-        const r = job.result || {};
-        const links = [];
-        if (r.download) links.push(`<a href="${esc(r.download)}" download>Letöltés</a>`);
-        $('prod-job-links').innerHTML = links.join(' ') + ' <a href="/jobs">Feladatok</a>';
-        if (job.state === 'complete') toast('A feladat elkészült.', 'ok');
-        else toast(job.error || job.message || 'A feladat nem sikerült.', 'err');
-        watchedJob = null;
-        load();
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+    const job = await Auris.watchJob(jobId, { onUpdate: showJob, isActive: () => watchedJob === jobId });
+    if (job) {
+      const r = job.result || {};
+      const links = [];
+      if (r.download) links.push(`<a href="${esc(r.download)}" download>Letöltés</a>`);
+      $('prod-job-links').innerHTML = links.join(' ') + ' <a href="/jobs">Feladatok</a>';
+      if (job.state === 'complete') toast('A feladat elkészült.', 'ok');
+      else toast(job.error || job.message || 'A feladat nem sikerült.', 'err');
+      load();
     }
-    watchedJob = null;
+    if (watchedJob === jobId) watchedJob = null;
   }
 
   async function start(url, body) {

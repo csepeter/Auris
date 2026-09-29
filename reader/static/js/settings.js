@@ -534,28 +534,32 @@ async function reloadTTS() {
   if (!response.ok) throw new Error('A beszédmotor nem tölthető újra. Előbb állítsd le a futó feladatokat.');
   hint.textContent  = 'A modell betöltése folyamatban…';
   hint.className    = 'status-hint status-ok';
-  // Poll until ready so accel status updates.
-  let n = 0;
-  const t = setInterval(async () => {
-    n += 1;
-    try {
-      const st = await fetch('/api/tts/status').then(r => r.json());
-      if (st.state === 'ready') {
-        clearInterval(t);
-        hint.textContent = 'A beszédmotor készen áll.';
-        refreshAccelStatus(st);
-      } else if (st.state === 'error') {
-        clearInterval(t);
-        hint.textContent = 'Betöltési hiba: ' + (st.message || 'error');
-        hint.className = 'status-hint status-error';
-      }
-    } catch (_) {}
-    if (n > 900) {
-      clearInterval(t);
+  // Engine state arrives as server events; a slow check covers missed ones.
+  let finished = false;
+  let off = null;
+  const started = Date.now();
+  const consider = async (st) => {
+    if (finished) return;
+    if (st.state === 'ready') {
+      finished = true;
+      hint.textContent = 'A beszédmotor készen áll.';
+      // The event carries no acceleration details, so read the full status once.
+      try { refreshAccelStatus(await fetch('/api/tts/status').then(r => r.json())); } catch (_) {}
+    } else if (st.state === 'error') {
+      finished = true;
+      hint.textContent = 'Betöltési hiba: ' + (st.message || 'ismeretlen hiba');
+      hint.className = 'status-hint status-error';
+    } else if (Date.now() - started > 30 * 60 * 1000) {
+      finished = true;
       hint.textContent = 'Még töltődik; ellenőrizd a felső állapotjelzést vagy a szervernaplót.';
       hint.className = 'status-hint status-warn';
     }
-  }, 2000);
+    if (finished) { clearInterval(timer); if (off) off(); }
+  };
+  off = window.Auris?.onEvent?.('engine', consider) || null;
+  const timer = setInterval(async () => {
+    try { consider(await fetch('/api/tts/status').then(r => r.json())); } catch (_) {}
+  }, off ? 10000 : 2000);
 }
 
 async function refreshAccelStatus(st) {
@@ -578,10 +582,33 @@ async function refreshAccelStatus(st) {
       probe.platform || '',
     ].filter(Boolean);
     el.textContent = parts.join(' · ');
+    const row = document.getElementById('triton-install-row');
+    if (row) row.classList.toggle('hidden', !(probe.backend === 'cuda' && !(probe.triton && probe.omnivoice_triton)));
   } catch (_) {
     el.textContent = '';
   }
 }
+
+document.getElementById('triton-install-btn')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const hint = document.getElementById('triton-install-hint');
+  button.disabled = true;
+  hint.className = 'status-hint status-warn';
+  hint.textContent = 'Telepítés… (egy-két perc)';
+  try {
+    const response = await fetch('/api/settings/triton-install', { method: 'POST' });
+    const data = await response.json();
+    hint.className = `status-hint ${data.ok ? 'status-ok' : 'status-error'}`;
+    hint.textContent = data.message || (data.ok ? 'Telepítve.' : 'A telepítés nem sikerült.');
+    if (data.ok) document.getElementById('tts-accel').value = 'hybrid';
+    if (data.ok) markSettingsDirty();
+  } catch (error) {
+    hint.className = 'status-hint status-error';
+    hint.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 // ── spaCy ─────────────────────────────────────────────────────────────────────
 

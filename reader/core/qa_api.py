@@ -62,9 +62,14 @@ def ensure_tables() -> None:
             );
             """
         )
-    from core import alignment
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(segment_takes)")}
+        if "voice_label" not in columns:
+            # A take may use another saved voice profile than the character's own.
+            conn.execute("ALTER TABLE segment_takes ADD COLUMN voice_label TEXT")
+    from core import alignment, sfx
 
     alignment.ensure_table()
+    sfx.ensure_table()
     with _tables_lock:
         _tables_ready.add(path)
 
@@ -151,14 +156,29 @@ def _store(book_id, chapter_id, seg, cache_key, evaluation, status, model) -> No
         )
 
 
-def _record_take(book_id, chapter_id, seg, take, result) -> None:
+def _record_take(book_id, chapter_id, seg, take, result, voice_label=None) -> None:
     with get_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO segment_takes (book_id,chapter_id,text_hash,take,cache_key,"
-            "audio_path,duration_sec) VALUES (?,?,?,?,?,?,?)",
+            "audio_path,duration_sec,voice_label) VALUES (?,?,?,?,?,?,?,?)",
             (book_id, chapter_id, segment_hash(seg), take, result["cache_key"],
-             result["audio_path"], result["duration_sec"]),
+             result["audio_path"], result["duration_sec"], voice_label),
         )
+
+
+def _profile_voice(profile_id) -> tuple[dict, str]:
+    """Voice fields of a saved profile, for a take in another voice."""
+    try:
+        profile_id = int(profile_id)
+    except (TypeError, ValueError):
+        raise ValueError("Érvénytelen hangprofil.") from None
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM voice_profiles WHERE id=?", (profile_id,)).fetchone()
+    if not row:
+        raise ValueError("A hangprofil nem található.")
+    ref_audio = row["ref_audio_path"] if row["ref_audio_path"] and os.path.exists(row["ref_audio_path"]) else None
+    return ({"instruct": row["instruct"], "ref_audio": ref_audio,
+             "ref_text": (row["ref_text"] or None) if ref_audio else None}, row["name"])
 
 
 def _use_take(seg_id: int, result: dict) -> None:
@@ -187,6 +207,7 @@ def run_qa_job(job_id: str, book_id: int, chapter_id: int, use_asr: bool, auto_r
     try:
         job.update(state="running", message="Szövegrészek betöltése…")
         application._persist_job(job)
+        application._wait_for_engine(job)
         segs = application._get_chapter_segments(chapter_id, book_id)
         job["total"] = len(segs)
         job["done"] = 0
@@ -295,8 +316,8 @@ def start_qa(book_id, chapter_id):
     application = _app()
     ensure_tables()
     body = request.get_json(silent=True) or {}
-    if application.tts.status().get("state") != "ready":
-        return jsonify(error="A beszédmotor még nem áll készen."), 503
+    if application.tts.status().get("state") == "not_loaded":
+        application.tts.load_async()  # the job waits for it
     with application._work_dispatch_lock:
         conflict = application._work_conflict_response()
         if conflict is not None:
@@ -320,9 +341,12 @@ def chapter_qa(book_id, chapter_id):
     with get_conn() as conn:
         rows = {r["cache_key"]: dict(r) for r in conn.execute(
             "SELECT * FROM segment_qa WHERE book_id=? AND chapter_id=?", (book_id, chapter_id))}
+        from core import sfx
+
+        effects = sfx.effects_for_chapter(book_id, chapter_id)
         takes = {}
         for r in conn.execute(
-                "SELECT text_hash, take, cache_key, duration_sec FROM segment_takes "
+                "SELECT text_hash, take, cache_key, duration_sec, voice_label FROM segment_takes "
                 "WHERE book_id=? AND chapter_id=? ORDER BY take", (book_id, chapter_id)):
             takes.setdefault(r["text_hash"], []).append(dict(r))
     items = []
@@ -346,6 +370,8 @@ def chapter_qa(book_id, chapter_id):
             "flags": json.loads(row["flags_json"]) if row else [],
             "metrics": json.loads(row["metrics_json"]) if row else {},
             "approved": bool(row and row["approved"]),
+            "sfx": ({key: effects[segment_hash(seg)][key] for key in ("name", "gain_db", "position")}
+                    if segment_hash(seg) in effects else None),
             "takes": [
                 {**t, "audio_url": f"/api/audio/{t['cache_key']}",
                  "selected": t["cache_key"] == seg.get("cache_key")}
@@ -388,11 +414,52 @@ def new_take(book_id, chapter_id, index):
             taken = [0]
     take = max(taken or [0]) + 1
     item = _voice_item(application, book_id, seg, chars, narrator, language)
+    body = request.get_json(silent=True) or {}
+    voice_label = None
+    if body.get("profile_id"):
+        try:
+            voice, voice_label = _profile_voice(body["profile_id"])
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        item.update(voice)
     result = application.tts.generate(**item, take=take)
-    _record_take(book_id, chapter_id, seg, take, result)
+    _record_take(book_id, chapter_id, seg, take, result, voice_label)
     _use_take(seg["id"], result)
     return jsonify(take=take, cache_key=result["cache_key"],
                    audio_url=f"/api/audio/{result['cache_key']}")
+
+
+@bp.route("/api/books/<int:book_id>/chapters/<int:chapter_id>/segments/<int:index>/sfx",
+          methods=["POST", "DELETE"])
+def segment_sfx(book_id, chapter_id, index):
+    """Attach (POST, multipart ``file``) or remove (DELETE) a sentence sound effect."""
+    import tempfile
+
+    from core import sfx
+
+    application = _app()
+    ensure_tables()
+    seg = _segment_by_index(application, book_id, chapter_id, index)
+    if request.method == "DELETE":
+        return jsonify(ok=sfx.remove_effect(book_id, chapter_id, segment_hash(seg)))
+    upload = request.files.get("file")
+    name = os.path.basename(str(getattr(upload, "filename", "") or ""))
+    if not upload or os.path.splitext(name)[1].lower() not in sfx.ALLOWED_EXTENSIONS:
+        return jsonify(error="WAV, MP3, OGG, Opus, FLAC vagy M4A hangfájlt válassz."), 400
+    try:
+        gain_db = float(request.form.get("gain_db", -8))
+    except ValueError:
+        return jsonify(error="Érvénytelen hangerő."), 400
+    position = request.form.get("position", "with")
+    with tempfile.TemporaryDirectory(prefix="auris-sfx-") as folder:
+        raw = os.path.join(folder, "upload" + os.path.splitext(name)[1].lower())
+        upload.save(raw)
+        try:
+            path = sfx.convert_upload(raw, name, os.path.join(application.UPLOAD_DIR, "sfx"))
+            effect = sfx.set_effect(book_id, chapter_id, segment_hash(seg), path, name, gain_db, position)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+    return jsonify(ok=True, sfx=effect)
 
 
 @bp.route("/api/books/<int:book_id>/chapters/<int:chapter_id>/segments/<int:index>/select-take",

@@ -12,6 +12,42 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- **Triton-gyorsítás Windowson is**: a Beállításokban egy gombbal (vagy telepítéskor `AURIS_TRITON=1`) települ a PyTorch-verzióhoz illő Triton. A kerneleket az Auris tartalmazza, Python 3.11-en is működnek. RTX 3090-en a hibrid mód kb. 25%-kal gyorsabb a CUDA Graphnál, azonos kiejtési pontossággal.
+- **Referenciahang-tisztítás** feltöltéskor és mikrofonos felvételnél: zúgás- és zajszűrés, csendvágás, hangerő-kiegyenlítés (kikapcsolható).
+- **Változat másik hanggal** az Ellenőrzés oldalon: egy mondat új változata bármelyik mentett hangprofillal elkészíthető és kiválasztható.
+- **Hangeffektek** mondatonként (a mondattal együtt vagy az előtte lévő szünetben, választható hangerővel); az exportba keverve, az időzítések megtartásával.
+
+#### Változott
+
+- Az oldalak a feladatok és a beszédmotor állapotát a szerveresemény-csatornáról kapják; a gyakori ismételt lekérdezés csak tartalékként maradt meg.
+- Egységes betűk és színek: a kis feliratok táblázatos számokkal a felület betűjét használják, a kód olvashatóbb monospace betűt; az állapotszínek világos témában is kellő kontrasztúak.
+- A Produkció oldal fejezetlistája telefonon kártyás elrendezésű; az olvasó oldalsávjának gombjai nem vágódnak le.
+- A maradék angol hibaüzenetek (fejezetkijelölés, modellletöltés, export) magyarok.
+- A `requirements.txt` már nem sorolja fel a gradio, tensorboardX és webdataset csomagot; ezeket csak az omnivoice hozza magával.
+
+### English
+
+#### Added
+
+- **Triton acceleration on Windows too**: one button in Settings (or `AURIS_TRITON=1` during setup) installs the Triton build that matches PyTorch. The kernels ship with Auris and run on Python 3.11. On an RTX 3090 the hybrid mode is about 25% faster than CUDA Graph with the same pronunciation accuracy.
+- **Reference clean-up** on upload and microphone recording: hum and noise reduction, silence trimming and level matching (optional).
+- **Takes in another voice** on the Quality page: an alternative of any sentence can be rendered with any saved voice profile and selected.
+- Per-sentence **sound effects** (with the sentence or in the pause before it, adjustable level), mixed into exports without changing any timing.
+
+#### Changed
+
+- Pages receive job and engine state from the server-event stream; frequent polling remains only as a fallback.
+- Consistent type and colour: small labels use the UI font with tabular figures, code uses a readable monospace font, and status colours keep their contrast in light themes.
+- The Production page chapter list uses cards on phones; the reader sidebar buttons no longer clip.
+- Remaining English error messages (chapter selection, model download, export) are Hungarian.
+- `requirements.txt` no longer lists gradio, tensorboardX and webdataset; they only arrive as omnivoice dependencies.
+
 ## [4.0.0] - 2026-09-29
 
 ### Magyar

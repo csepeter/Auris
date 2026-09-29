@@ -89,6 +89,25 @@ class ProductionApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Teljes könyv generálása".encode("utf-8"), response.data)
 
+    def test_generation_started_while_engine_loads_waits_for_it(self):
+        engine = app_module.tts
+        states = iter(["not_loaded", "loading", "loading"])
+        loads = []
+        engine.status = lambda: {"state": next(states, "ready"), "engine": "supertonic"}
+        engine.load_async = lambda: loads.append(1)
+        response = self.client.post("/api/books/1/generate", json={})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        job_id = response.get_json()["job_id"]
+        for _ in range(200):
+            job = jobs.get_job(job_id)
+            if job["state"] not in ("pending", "running"):
+                break
+            time.sleep(0.05)
+        self.assertEqual(job["state"], "complete", job)
+        self.assertTrue(loads)
+        self.assertEqual(job["result"]["ready"], job["result"]["total"])
+        self.assertGreater(job["result"]["total"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

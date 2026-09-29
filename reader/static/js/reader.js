@@ -228,7 +228,7 @@ applyTheme(currentTheme);
 const FONT_FAMILIES = {
   serif: "Georgia, 'Palatino Linotype', serif",
   sans:  "'Helvetica Neue', Arial, sans-serif",
-  mono:  "'Courier New', Courier, monospace",
+  mono:  "ui-monospace, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace",
 };
 
 function applyFontFamily(ff) {
@@ -513,15 +513,27 @@ function jumpTo(idx) {
 // reaches it — without it, the chain only fires the frontier after 3–4
 // cached segments play through, which is too late for slow TTS on CPU.
 async function _waitForTtsReady(bufferId, chapterId) {
-  while (_bufferGenId === bufferId && currentChapterId === chapterId) {
-    try {
-      const status = await fetch('/api/tts/status').then(r => r.json());
-      if (status.state === 'ready') return true;
-      if (status.state === 'error') return false;
-    } catch (_) {}
-    await new Promise(r => setTimeout(r, 750));
-  }
-  return false;
+  const stillWanted = () => _bufferGenId === bufferId && currentChapterId === chapterId;
+  const check = async () => {
+    try { return (await fetch('/api/tts/status').then(r => r.json())).state; } catch (_) { return null; }
+  };
+  let state = await check();
+  if (state === 'ready') return true;
+  if (state === 'error') return false;
+  // Engine state changes arrive as server events; a slow check covers gaps.
+  return new Promise(resolve => {
+    let timer = null;
+    let off = null;
+    const finish = (value) => { clearTimeout(timer); if (off) off(); resolve(value); };
+    const consider = (next) => {
+      if (!stillWanted()) finish(false);
+      else if (next === 'ready') finish(true);
+      else if (next === 'error') finish(false);
+    };
+    off = window.Auris?.onEvent?.('engine', s => consider(s.state)) || null;
+    const tick = async () => { consider(await check()); timer = setTimeout(tick, off ? 5000 : 750); };
+    timer = setTimeout(tick, off ? 5000 : 750);
+  });
 }
 
 function getSpeakerColor(name) {
@@ -861,21 +873,14 @@ async function monitorChapterGeneration(jobId, chapterId) {
   _activeChapterGeneration = { jobId, chapterId };
   _exportBusy = true;
 
-  while (_activeChapterGeneration?.jobId === jobId) {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    let state;
-    try {
-      state = await fetch(`/api/chapter-generation/status/${jobId}`).then(r => r.json());
-      if (state.error && !state.state) state.state = 'failed';
-    } catch (_) {
-      continue;
-    }
-
-    if (Number(currentChapterId) === Number(chapterId)) {
-      renderChapterGenerationStatus(state);
-    }
-    if (!['complete', 'failed', 'cancelled', 'interrupted'].includes(state.state)) continue;
-
+  const state = await Auris.watchJob(jobId, {
+    url: `/api/chapter-generation/status/${jobId}`,
+    isActive: () => _activeChapterGeneration?.jobId === jobId,
+    onUpdate: (update) => {
+      if (Number(currentChapterId) === Number(chapterId)) renderChapterGenerationStatus(update);
+    },
+  });
+  if (state) {
     _activeChapterGeneration = null;
     _exportBusy = false;
     if (state.state === 'complete') {
@@ -895,7 +900,6 @@ async function monitorChapterGeneration(jobId, chapterId) {
         _prewarmChapter();
       }
     }
-    return;
   }
 }
 

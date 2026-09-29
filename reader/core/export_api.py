@@ -15,7 +15,7 @@ from flask import (
     send_file,
 )
 from core.database import init_db, get_conn
-from core import security
+from core import security, sfx
 from core.cancellation import GenerationAborted
 from core import text_editor
 from core.tts_batcher import InteractiveTTSBatcher
@@ -158,7 +158,7 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
             job['message'] = 'Az export nem sikerült'
             application._persist_job(job)
             return
-        segs = application._get_chapter_segments(chapter_id, book_id)
+        segs = sfx.attach(book_id, chapter_id, application._get_chapter_segments(chapter_id, book_id))
         job['total'] = len(segs)
         job['done'] = 0
         job['message'] = f'Hang készítése (0/{len(segs)})'
@@ -171,7 +171,7 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
         colors = application._get_char_colors(book_id)
         mastering = bool(app_settings.get('audio_mastering', True))
         job['message'] = (
-            'Merging and mastering audio...' if mastering else 'Hangok összefűzése…'
+            'Hangok összefűzése és hangerő-kiegyenlítése…' if mastering else 'Hangok összefűzése…'
         )
         with get_conn() as conn:
             full_book = conn.execute('SELECT * FROM books WHERE id=?', (book_id,)).fetchone()
@@ -266,7 +266,7 @@ def _run_chapterwise_export(
         for chapter_number, ch in enumerate(chapters, 1):
             if chapter_number not in selected:
                 continue
-            segs = application._get_chapter_segments(ch['id'], book_id)
+            segs = sfx.attach(book_id, ch['id'], application._get_chapter_segments(ch['id'], book_id))
             chapters_data.append({
                 'chapter_number': chapter_number,
                 'chapter_title': ch['title'],

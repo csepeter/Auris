@@ -397,16 +397,23 @@ def _delete_file_if_exists(path: str | None):
         log.warning('Unable to delete file %s: %s', path, exc)
 
 
-def _save_reference_upload(file_storage, prefix: str) -> str:
+def _save_reference_upload(file_storage, prefix: str, clean: bool = False) -> str:
     """Store an uploaded reference WAV under a content-addressed name.
 
     Audio cache keys include the reference path, so a replacement voice must
     never reuse the previous file name; otherwise cached audio of the old voice
-    would be returned for the new one.
+    would be returned for the new one. With ``clean`` the file is denoised,
+    trimmed and level-matched first (core.reference_audio); the name is taken
+    from the stored content either way.
     """
     import hashlib
     tmp = os.path.join(UPLOAD_DIR, f'.{prefix}.{uuid.uuid4().hex}.upload')
     file_storage.save(tmp)
+    if clean:
+        from core import reference_audio
+        cleaned = tmp + '.clean.wav'
+        if reference_audio.clean_reference(tmp, cleaned)['cleaned']:
+            os.replace(cleaned, tmp)
     digest = hashlib.sha256()
     with open(tmp, 'rb') as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b''):
@@ -872,7 +879,7 @@ def import_book():
             }), 400
         if llm_config['provider'] == 'openai' and not llm_config['api_key']:
             return jsonify({
-                'error': 'Add an OpenAI API key before using OpenAI character analysis.'
+                'error': 'Az OpenAI-alapú szereplőfelismeréshez előbb add meg az OpenAI API-kulcsot.'
             }), 400
         if not llm_config['model']:
             return jsonify({
@@ -1025,7 +1032,7 @@ def _detect_characters(
             )
             analysis_job.update(
                 state='complete', done=len(data.get('chapters') or []),
-                message='Legacy detection complete.', result={'book_id': book_id},
+                message='A szereplőfelismerés kész.', result={'book_id': book_id},
             )
             _persist_job(analysis_job)
         except JobCancelled:
@@ -1045,7 +1052,7 @@ def _detect_characters(
         with _character_analysis_lock:
             if uses_local_llm and not tts.wait_until_unloaded(timeout=600):
                 raise RuntimeError(
-                    'Timed out waiting for the TTS model to release VRAM.'
+                    'Lejárt a várakozás: a beszédmotor nem szabadította fel a videomemóriát.'
                 )
             _set_character_analysis_status(
                 book_id,
@@ -2246,7 +2253,7 @@ def upload_ref_audio(char_id):
             return jsonify({'error': 'Nem található'}), 404
         if row['ref_audio_path']:
             tts.invalidate_voice_prompt(row['ref_audio_path'], row['ref_text'])
-    path = _save_reference_upload(f, f'ref_{char_id}')
+    path = _save_reference_upload(f, f'ref_{char_id}', clean=request.form.get('clean') == '1')
     with get_conn() as conn:
         conn.execute(
             'UPDATE characters SET ref_audio_path=?, ref_audio_name=?, ref_text=? WHERE id=?',
@@ -2300,7 +2307,7 @@ def upload_narrator_ref_audio(book_id):
             tts.invalidate_voice_prompt(
                 prev['narrator_ref_audio_path'], prev['narrator_ref_text']
             )
-    path = _save_reference_upload(f, f'narrator_ref_{book_id}')
+    path = _save_reference_upload(f, f'narrator_ref_{book_id}', clean=request.form.get('clean') == '1')
     with get_conn() as conn:
         conn.execute(
             'UPDATE books SET narrator_ref_audio_path=?, narrator_ref_audio_name=?, '
@@ -2351,7 +2358,7 @@ def tts_status():
     if _character_analysis_is_active():
         return jsonify({
             'state': 'paused',
-            'message': 'TTS is unloaded while character analysis uses the local LLM.',
+            'message': 'A szereplőelemzés idejére a beszédmotor ki van töltve a videomemóriából.',
         })
     status = tts.status()
     if status.get('state') == 'not_loaded':
@@ -2719,6 +2726,35 @@ def _bump_export_progress(job: dict | None, n: int = 1, *, synthesized: bool = F
             _persist_job(job)
 
 
+ENGINE_WAIT_SEC = 1800.0
+
+
+def _wait_for_engine(job: dict | None) -> None:
+    """Hold a background job until the speech engine is ready, loading it if
+    needed, so work can be started while the model is still loading."""
+    import time
+
+    deadline = time.monotonic() + ENGINE_WAIT_SEC
+    announced = False
+    while True:
+        status = tts.status()
+        state = status.get('state')
+        if state == 'ready':
+            return
+        if state == 'error':
+            raise RuntimeError('A beszédmotor nem tölthető be: ' + str(status.get('message') or ''))
+        if state == 'not_loaded':
+            tts.load_async()
+        if job is not None and not announced:
+            job['message'] = 'A beszédmotor betöltése…'
+            _persist_job(job)
+            announced = True
+        _check_job_cancelled(job)
+        if time.monotonic() > deadline:
+            raise RuntimeError('A beszédmotor nem töltődött be időben.')
+        time.sleep(0.5)
+
+
 def _ensure_audio_for_chapter(
     book_id: int,
     chapter_id: int,
@@ -3068,7 +3104,7 @@ def generate_chapter_audio(book_id, chapter_id):
                 'busy_chapter_id': active.get('chapter_id'),
             }), 409
         if _active_durable_jobs():
-            return jsonify({'error': 'An audio export is already running.'}), 409
+            return jsonify({'error': 'Már fut egy hangexport.'}), 409
 
     if _export_exclusive_active():
         return jsonify({'error': 'Már fut egy hanggenerálás vagy export.'}), 409
@@ -3156,46 +3192,6 @@ def _get_chapter_segments(chapter_id, book_id):
     return [dict(r) for r in rows]
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # Bookmarks API
 # ════════════════════════════════════════════════════════════════════════════
@@ -3249,26 +3245,6 @@ def settings_page():
 @app.route('/docs')
 def docs_page():
     return render_template('docs.html')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ════════════════════════════════════════════════════════════════════════════

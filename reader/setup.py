@@ -11,6 +11,7 @@ Environment:
     AURIS_OFFLINE=1          Force local-wheel-only installs.
     AURIS_USE_LOCAL_WHEELS=1 Use a local wheel directory before package indexes.
     AURIS_WHEELS_DIR=...     Override the local wheel directory path.
+    AURIS_TRITON=1           Also install the optional Triton kernels (NVIDIA).
 """
 
 import os
@@ -428,6 +429,27 @@ def install_hungarian_spacy_model():
         warn("Install it later from Settings -> Character detection.")
 
 
+def install_triton_acceleration(hw_tag):
+    """Optional Triton kernels for the hybrid OmniVoice mode (NVIDIA only)."""
+    if os.environ.get("AURIS_TRITON", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return
+    step("Installing optional Triton acceleration")
+    if not hw_tag.startswith("cu"):
+        warn("Triton acceleration needs an NVIDIA GPU; skipped.")
+        return
+    try:
+        sys.path.insert(0, str(APP_DIR))
+        from core.tts_accel import install_triton
+
+        result = install_triton()
+    except Exception as exc:  # optional step must not stop setup
+        result = {"ok": False, "message": str(exc)}
+    if result.get("ok"):
+        ok("Triton kernels installed; choose the Hybrid mode in Settings.")
+    else:
+        warn("Triton acceleration was not installed: " + str(result.get("message", ""))[-300:])
+
+
 def print_summary(hw_tag):
     device_label = {
         "rocm": "AMD GPU (ROCm)",
@@ -492,6 +514,7 @@ def main():
     install_reader_deps()
     install_spacy_model()
     install_hungarian_spacy_model()
+    install_triton_acceleration(hw_tag)
     verify_torch(hw_tag)
     print_summary(hw_tag)
 
