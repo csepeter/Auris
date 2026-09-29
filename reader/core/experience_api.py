@@ -580,13 +580,15 @@ def storage_status():
             if path.exists()
             else []
         )
-        result.append(
-            {
-                "name": name,
-                "bytes": sum(p.stat().st_size for p in files),
-                "files": len(files),
-            }
-        )
+        size = 0
+        for item in files:
+            try:
+                size += item.stat().st_size
+            except OSError:
+                # SQLite WAL side files (-wal/-shm) may vanish between listing
+                # and stat while a connection closes.
+                continue
+        result.append({"name": name, "bytes": size, "files": len(files)})
     cache = _audio_cache_scan()
     cache.pop("orphan_paths", None)
     return jsonify(

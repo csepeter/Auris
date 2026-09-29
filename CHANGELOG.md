@@ -12,6 +12,56 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- Magyar szövegfeldolgozás a felolvasás előtt: dátumok (`március 15-e`, `2024. 10. 05.`), egybetűs római számok (`I. István`), időpontok (`7.30-kor`), telefonszámok, tartományok (`2-3 napos`), törtek, előjeles számok, pénznemek és mértékegységek ragozással (`500 Ft-ért`, `5 kg-os`), rövidítések (`pl.`, `kb.`, `stb.`, `Kft.`) és betűszók (`BKV`, `EU-ban`).
+- Magyar mondatbontás: ékezetes nagybetű és `„`, `»` előtti határ; rövidítés, sorszám (`IV. Béla`, `1848. március`) és névkezdőbetű (`Szabó J. Éva`, `Gy.`) után nincs téves határ; magyar fejezetcímek (`ELSŐ FEJEZET`, `Előszó`) felismerése.
+- Magyar párbeszéd és hangulat: `»…«`, `„…“` idézőjel, a gondolatjeles párbeszéd egységes kezelése, magyar beszélő-hozzárendelő igék (`mondta Anna`), valamint a `suttogta`, `nevetett`, `sóhajtott`, `lassan` szavak hatása.
+- Nyelvi modell nélküli magyar szereplőfelismerés HuSpaCy-val (egy gombbal telepíthető), a ragozott névalakok és a teljes nevek összevonásával, magyar utónév alapú nembecsléssel.
+- A kiejtési szótár egyszavas szabályai a ragozott alakokra is érvényesek (`Anna` → `Annának`).
+- A leírással megadott (voice design) hangok egyszer egy magyar mintamondatból referenciaklipet kapnak, és a szakaszok ezt klónozzák, így a hangszín a könyv egészében állandó. Kikapcsolható a Beállítások oldalon.
+- Importáláskor a lágy kötőjel és láthatatlan jelek eltávolítása, a régi `õ`/`û` → `ő`/`ű` javítása, a PDF-sorvégi elválasztás és az összetételi kötőjel (`Kossuth-díj`) megkülönböztetése; címke nélküli EPUB-nál a nyelv felismerése a szövegből.
+
+#### Változott
+
+- Az új szereplők és az alapértelmezett narrátor hangleírása nem tartalmaz idegen akcentust.
+- A könyvexport a kijelölt fejezetek hangját egy menetben, fejezethatárokon átívelő GPU-csomagokban készíti; a mastering fejezetenként, párhuzamosan fut (saját mérés, M4B: 92,6 s → 57,4 s); a fejezet-WAV és az MP3 blokkonként, közvetlenül FFmpeg-gel készül.
+- Gyorsabb első lejátszás: a modell betöltés után bemelegszik, a lejátszandó mondat azonnal indul, a következő mondatok egy csomagban készülnek.
+- A Higgs referenciahangot hangonként egyszer kódolja; a Higgs alapértelmezett tokenkorlátja 2048, így a hosszú szakasz sem vágódik le.
+- A normalizáló verziója a hangcache-kulcs része, ezért a javítások a korábban generált magyar hangrészekre is érvényesülnek; a mentett beszélőjelölések a szövegük alapján automatikusan az új mondathatárokhoz igazodnak.
+
+#### Javítva
+
+- A tárhelyösszesítő nem hibázik, ha egy SQLite-segédfájl a listázás közben eltűnik.
+
+### English
+
+#### Added
+
+- Hungarian text processing before speech: dates (`március 15-e`, `2024. 10. 05.`), single-letter Roman numerals (`I. István`), times (`7.30-kor`), phone numbers, ranges (`2-3 napos`), fractions, signed numbers, currencies and units with inflection (`500 Ft-ért`, `5 kg-os`), abbreviations (`pl.`, `kb.`, `stb.`, `Kft.`) and acronyms (`BKV`, `EU-ban`).
+- Hungarian sentence splitting: boundaries before accented capitals and `„`, `»`; no false boundary after abbreviations, ordinals (`IV. Béla`, `1848. március`) and initials (`Szabó J. Éva`, `Gy.`); Hungarian chapter headings (`ELSŐ FEJEZET`, `Előszó`) are recognized.
+- Hungarian dialogue and mood: `»…«` and `„…“` quotes, consistent dash-dialogue handling, Hungarian attribution verbs (`mondta Anna`), and the effect of `suttogta`, `nevetett`, `sóhajtott`, `lassan`.
+- Hungarian character detection without a language model using HuSpaCy (one-click install), merging inflected name forms and full names, with gender estimation from Hungarian given names.
+- Single-word pronunciation rules also apply to inflected forms (`Anna` → `Annának`).
+- Voices described by text (voice design) are rendered once into a Hungarian reference clip that every segment clones, keeping the timbre constant across a book. It can be disabled in Settings.
+- Import removes soft hyphens and invisible characters, repairs legacy `õ`/`û` → `ő`/`ű`, distinguishes PDF line-break hyphenation from compound hyphens (`Kossuth-díj`), and detects the language of untagged EPUBs from their text.
+
+#### Changed
+
+- New characters and the default narrator no longer carry a foreign accent in their voice description.
+- Book export synthesizes all selected chapters in one pass with GPU packs spanning chapter boundaries; mastering runs per chapter in parallel (own measurement, M4B: 92.6 s → 57.4 s); chapter WAV and MP3 are written in blocks directly with FFmpeg.
+- Faster first playback: the model warms up after loading, the sentence to play starts immediately, and the following sentences are generated in one pack.
+- Higgs encodes each reference voice once; the default Higgs token limit is 2048 so long segments are not cut off.
+- The normalizer version is part of the audio cache key, so fixes reach previously generated Hungarian audio; saved speaker annotations are re-aligned to the new sentence boundaries by their text.
+
+#### Fixed
+
+- The storage summary no longer fails when an SQLite side file disappears while it is being listed.
+
 ## [3.4.2] - 2026-09-29
 
 ### Magyar

@@ -157,19 +157,55 @@ def delete_rule(rule_id):
         _invalidate(conn, row["book_id"])
 
 
+# Hungarian inflection that may follow a word covered by a rule ("Szergejjel",
+# "Gorcsevéknél"). Only whole suffix chains match, never arbitrary letters,
+# so "Gorcsevics" is not treated as "Gorcsev" + something.
+_HU_SUFFIX = (
+    r'(?:(?:nak|nek|val|vel|ért|ról|ről|tól|től|hoz|hez|höz|ban|ben|ba|be|ból|'
+    r'ből|ra|re|on|en|ön|nál|nél|ig|ként|kor|ék|ok|ek|ök|ak|jai|jei|ai|ei|juk|jük|'
+    r'ja|je|ját|jét|jával|jével|unk|ünk|tok|tek|tök|uk|ük|om|em|öm|am|od|ed|öd|ad|'
+    r'at|et|ot|öt|é|a|e|k|t|n|m|d|i|'
+    r'[bcdfghjklmnprstvzy]?(?:al|el))){1,3}'
+)
+_LENGTHEN = {'a': 'á', 'e': 'é'}
+_SHORTEN = {'á': 'a', 'é': 'e'}
+
+
+def _inflectable(source: str) -> bool:
+    return len(source) >= 3 and source.replace('-', '').isalpha() and ' ' not in source
+
+
 def apply_pronunciation(text, book_id=None, rules=None):
     mapping = {}
     for rule in list_rules(book_id) if rules is None else rules:
         mapping[rule["source"]] = rule["replacement"]
     if not mapping:
         return text
-    pattern = re.compile(
-        r"(?<!\w)(?:"
-        + "|".join(re.escape(k) for k in sorted(mapping, key=len, reverse=True))
-        + r")(?!\w)"
-    )
+    alternatives = []
+    for key in sorted(mapping, key=len, reverse=True):
+        if _inflectable(key):
+            stem = re.escape(key)
+            if key[-1] in _LENGTHEN:
+                # Anna -> Annának: the final vowel lengthens before a suffix.
+                stem = f'(?:{stem}|{re.escape(key[:-1])}{_LENGTHEN[key[-1]]}(?=\w))'
+            alternatives.append(f'(?P<w{len(alternatives)}>{stem})(?:-?{_HU_SUFFIX})?')
+        else:
+            alternatives.append(f'(?P<w{len(alternatives)}>{re.escape(key)})')
+    keys = sorted(mapping, key=len, reverse=True)
+    pattern = re.compile(r"(?<!\w)(?:" + "|".join(alternatives) + r")(?!\w)")
+
+    def replace(match):
+        index = next(i for i, value in enumerate(match.groups()) if value is not None)
+        source = keys[index]
+        replacement = mapping[source]
+        word = match.group(f'w{index}')
+        suffix = match.group(0)[len(word):]
+        if word != source and replacement and replacement[-1] in _LENGTHEN:
+            replacement = replacement[:-1] + _LENGTHEN[replacement[-1]]
+        return replacement + suffix
+
     # One pass: replacements are never interpreted as new dictionary input.
-    return pattern.sub(lambda m: mapping[m.group(0)], text)
+    return pattern.sub(replace, text)
 
 
 def save_profile(name, book_id, char_id=None):

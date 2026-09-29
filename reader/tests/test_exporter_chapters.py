@@ -189,8 +189,10 @@ class ChapterFolderExportTests(unittest.TestCase):
                 patch.object(exporter, 'EXPORTS_DIR', tmp),
                 patch.object(
                     exporter,
-                    '_wav_to_mp3_bytes',
-                    return_value=b'mp3',
+                    '_wav_to_mp3_file',
+                    side_effect=lambda wav, mp3, tags=None: (
+                        open(mp3, 'wb').write(b'mp3') and True
+                    ),
                 ) as encode_mp3,
             ):
                 result = exporter.export_single_chapter(
@@ -203,7 +205,7 @@ class ChapterFolderExportTests(unittest.TestCase):
             self.assertTrue(os.path.isfile(result['audio_path']))
             encode_mp3.assert_called_once()
             self.assertEqual(
-                encode_mp3.call_args.kwargs['tags'],
+                encode_mp3.call_args.args[2],
                 {
                     'title': 'Chapter',
                     'artist': 'Writer',

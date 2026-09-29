@@ -13,6 +13,33 @@ log = logging.getLogger(__name__)
 
 _nlp = None
 _spacy_error: str = ''
+_hu_nlp = None
+_hu_nlp_checked = False
+
+# HuSpaCy models, best first. Any installed one enables Hungarian NER.
+HUNGARIAN_SPACY_MODELS = ('hu_core_news_lg', 'hu_core_news_md', 'hu_core_news_trf')
+
+
+def _get_hungarian_nlp():
+    """Return a loaded HuSpaCy pipeline or None (regex fallback)."""
+    global _hu_nlp, _hu_nlp_checked
+    if _hu_nlp is not None or _hu_nlp_checked:
+        return _hu_nlp
+    _hu_nlp_checked = True
+    try:
+        import spacy
+    except ImportError:
+        return None
+    for model in HUNGARIAN_SPACY_MODELS:
+        try:
+            _hu_nlp = spacy.load(model)
+            log.info('Hungarian character detection uses %s', model)
+            return _hu_nlp
+        except (OSError, ValueError):
+            continue
+        except Exception as exc:
+            log.warning('Unable to load %s: %s', model, exc)
+    return None
 
 
 def _get_nlp():
@@ -25,16 +52,25 @@ def _get_nlp():
         _spacy_error = ''
         return _nlp
     except ImportError:
-        _spacy_error = 'spaCy is not installed. Run: pip install spacy'
+        _spacy_error = 'A spaCy nincs telepítve.'
         log.warning(_spacy_error)
         return None
     except OSError:
         _spacy_error = (
-            'spaCy model en_core_web_sm not found. '
-            'Go to Settings → spaCy and click Install Model.'
+            'Az en_core_web_sm angol modell nem található. '
+            'Beállítások → Szereplőfelismerés → Angol modell telepítése.'
         )
         log.warning(_spacy_error)
         return None
+
+
+def reset_nlp_cache() -> None:
+    """Forget loaded pipelines after a model install."""
+    global _nlp, _spacy_error, _hu_nlp, _hu_nlp_checked
+    _nlp = None
+    _spacy_error = ''
+    _hu_nlp = None
+    _hu_nlp_checked = False
 
 
 def spacy_ready() -> bool:
@@ -82,12 +118,56 @@ FEMALE_NAMES = {
 }
 
 
+# Common Hungarian given names and forms of address. Hungarian order is
+# family name first ("Kovács Anna"), so every token of a name is checked.
+HUNGARIAN_MALE_NAMES = {
+    'ádám', 'ákos', 'albert', 'alex', 'alfréd', 'andor', 'andrás', 'antal', 'árpád',
+    'attila', 'balázs', 'bálint', 'barnabás', 'béla', 'bence', 'bendegúz', 'benedek',
+    'botond', 'csaba', 'dániel', 'dávid', 'dénes', 'dezső', 'domonkos', 'elemér',
+    'emil', 'ernő', 'ervin', 'ferenc', 'feri', 'frigyes', 'gábor', 'gáspár', 'gergely',
+    'gergő', 'géza', 'gusztáv', 'győző', 'gyula', 'györgy', 'gyuri', 'henrik', 'ignác',
+    'imre', 'istván', 'pista', 'iván', 'jakab', 'jános', 'jancsi', 'jenő', 'józsef',
+    'jóska', 'kálmán', 'károly', 'kristóf', 'krisztián', 'lajos', 'lőrinc', 'lóránt',
+    'lukács', 'márk', 'márton', 'máté', 'mátyás', 'miklós', 'mihály', 'misi', 'milán',
+    'norbert', 'nándor', 'olivér', 'ottó', 'pál', 'palkó', 'péter', 'pisti', 'rezső',
+    'richárd', 'róbert', 'roland', 'sándor', 'sanyi', 'sebestyén', 'szabolcs', 'szilárd',
+    'tamás', 'tibor', 'tivadar', 'tódor', 'vilmos', 'viktor', 'vince', 'zalán', 'zoltán',
+    'zsigmond', 'zsolt', 'bácsi', 'úr', 'uraság', 'gróf', 'báró', 'herceg', 'király',
+    'atya', 'apó', 'kapitány',
+}
+HUNGARIAN_FEMALE_NAMES = {
+    'ágnes', 'ágota', 'aliz', 'amália', 'andrea', 'anikó', 'anita', 'anna', 'anni',
+    'annamária', 'boglárka', 'borbála', 'bori', 'csilla', 'dóra', 'dorina', 'dorottya',
+    'edit', 'emese', 'emma', 'enikő', 'erika', 'erzsébet', 'erzsi', 'eszter', 'etelka',
+    'éva', 'evelin', 'fanni', 'flóra', 'gabriella', 'gizella', 'hajnalka', 'hanna',
+    'ibolya', 'ildikó', 'ilona', 'ilus', 'irén', 'izabella', 'johanna', 'judit', 'julianna',
+    'juli', 'júlia', 'kata', 'katalin', 'kati', 'klára', 'kinga', 'krisztina', 'lili',
+    'lilla', 'magdolna', 'margit', 'mari', 'mária', 'marianna', 'marika', 'márta',
+    'melinda', 'mónika', 'nikolett', 'nóra', 'noémi', 'orsolya', 'panna', 'petra',
+    'piroska', 'rebeka', 'réka', 'rita', 'rozália', 'sára', 'sarolta', 'szilvia', 'tímea',
+    'terézia', 'teréz', 'valéria', 'vera', 'veronika', 'viktória', 'virág', 'zita',
+    'zsófia', 'zsófi', 'zsuzsanna', 'zsuzsa', 'néni', 'asszony', 'kisasszony', 'hölgy',
+    'úrnő', 'grófnő', 'hercegnő', 'királynő', 'anyó', 'nővér',
+}
+
+
 def detect_gender_by_name(name: str) -> str:
-    first = name.strip().split()[0].lower()
+    tokens = [token.lower().strip('.,') for token in name.strip().split() if token]
+    if not tokens:
+        return 'unknown'
+    first = tokens[0]
     if first in MALE_NAMES:
         return 'male'
     if first in FEMALE_NAMES:
         return 'female'
+    for token in reversed(tokens):
+        if token in HUNGARIAN_MALE_NAMES:
+            return 'male'
+        if token in HUNGARIAN_FEMALE_NAMES:
+            return 'female'
+        # Married names: Kovácsné, Szabó Jánosné
+        if len(token) > 3 and token.endswith('né'):
+            return 'female'
     return 'unknown'
 
 
@@ -141,10 +221,6 @@ def generate_voice_profile(name: str, gender: str) -> dict:
     pitches_f = ['moderate pitch', 'high pitch', 'very high pitch']
     pitches_n = ['low pitch', 'moderate pitch', 'high pitch']
 
-    accents = [
-        'american accent', 'british accent', 'australian accent',
-        'canadian accent', 'indian accent',
-    ]
 
     if gender == 'male':
         age = rng.choice(ages_m)
@@ -159,8 +235,10 @@ def generate_voice_profile(name: str, gender: str) -> dict:
         pitch = rng.choice(pitches_n)
         g = rng.choice(['male', 'female'])
 
-    accent = rng.choice(accents)
-    instruct = f'{g}, {age}, {pitch}, {accent}'
+    # No accent: a random foreign accent distorts Hungarian pronunciation.
+    # Users can still pick one per character in Voice Studio.
+    accent = ''
+    instruct = f'{g}, {age}, {pitch}'
 
     color_idx = _hash_seed(name) % len(CHAR_COLORS)
     color = CHAR_COLORS[color_idx]
@@ -244,9 +322,102 @@ def extract_characters_spacy(text: str, top_n: int = 20) -> list[dict]:
     return characters
 
 
-def extract_characters(text: str, top_n: int = 20) -> list[dict]:
-    # Always attempt spaCy (preferred); regex is only the degraded fallback
-    chars = extract_characters_spacy(text, top_n)
+_HU_CASE_SUFFIXES = tuple(sorted({
+    'nak', 'nek', 'val', 'vel', 'ért', 'ról', 'ről', 'tól', 'től', 'hoz', 'hez', 'höz',
+    'ban', 'ben', 'ba', 'be', 'ból', 'ből', 'ra', 're', 'on', 'en', 'ön', 'nál', 'nél',
+    'ig', 'ként', 'kor', 'ék', 'é', 't', 'at', 'et', 'ot', 'öt', 'n',
+    'tal', 'tel', 'ral', 'rel', 'lal', 'lel', 'nal', 'nel', 'sal', 'sel', 'dal', 'del',
+    'mal', 'mel', 'kal', 'kel', 'gal', 'gel', 'jal', 'jel',
+}, key=len, reverse=True))
+_HU_LENGTHENED = {'á': 'a', 'é': 'e'}
+_HU_ATTRIBUTION = (
+    'mondta', 'kérdezte', 'felelte', 'válaszolta', 'szólt', 'kiáltotta',
+    'kiabálta', 'suttogta', 'súgta', 'motyogta', 'morogta', 'sóhajtotta',
+    'nevetett', 'folytatta', 'tette hozzá', 'jegyezte meg', 'ismételte',
+    'ordította', 'üvöltötte', 'dadogta', 'hebegte', 'nyögte', 'vetette közbe',
+    'szólalt meg', 'kezdte', 'magyarázta', 'erősködött',
+)
+_HU_NAME_RE = re.compile(
+    r'(?:' + '|'.join(re.escape(v) for v in sorted(_HU_ATTRIBUTION, key=len, reverse=True))
+    + r')\s+((?:[A-ZÁÉÍÓÖŐÚÜŰ][a-záéíóöőúüű]+)(?:\s[A-ZÁÉÍÓÖŐÚÜŰ][a-záéíóöőúüű]+)?)'
+)
+_HU_STOP = {
+    'Az', 'Egy', 'Ő', 'Én', 'Te', 'Mi', 'Ti', 'Ők', 'Isten', 'Uram', 'De', 'És',
+    'Hogy', 'Aztán', 'Majd', 'Most', 'Igen', 'Nem', 'Hát', 'Na', 'Ön', 'Önök',
+}
+
+
+def _hungarian_base_name(name: str, known: set) -> str:
+    """Map an inflected name ("Annának", "Péterrel") to a known base form."""
+    head, _, last = name.rpartition(' ')
+    prefix = head + ' ' if head else ''
+    lower = last.lower()
+    for suffix in _HU_CASE_SUFFIXES:
+        if len(lower) - len(suffix) < 2 or not lower.endswith(suffix):
+            continue
+        stem = last[: len(last) - len(suffix)]
+        candidates = [stem]
+        if stem and stem[-1] in _HU_LENGTHENED:
+            candidates.append(stem[:-1] + _HU_LENGTHENED[stem[-1]])
+        if len(stem) > 2 and stem[-1] == stem[-2]:
+            candidates.append(stem[:-1])  # Péterrel -> Péterr -> Péter
+        for candidate in candidates:
+            full = prefix + candidate
+            if full != name and full in known:
+                return full
+    return name
+
+
+def extract_characters_hungarian(text: str, top_n: int = 20) -> list[dict]:
+    """Hungarian people via HuSpaCy NER, or dialogue-attribution regex."""
+    counter: Counter = Counter()
+    nlp = _get_hungarian_nlp()
+    if nlp is not None:
+        chunk_size = 100_000
+        for i in range(0, len(text), chunk_size):
+            doc = nlp(text[i:i + chunk_size])
+            for ent in doc.ents:
+                if ent.label_ in ('PER', 'PERSON') and len(ent.text.split()) <= 3:
+                    name = ent.text.strip(' .,;:!?–—-"„”»«')
+                    if len(name) > 1 and name[0].isupper():
+                        counter[name] += 1
+    for match in _HU_NAME_RE.finditer(text):
+        counter[match.group(1)] += 2
+    # Fold inflected forms into the base name that also occurs on its own.
+    known = set(counter)
+    merged: Counter = Counter()
+    for name, freq in counter.items():
+        merged[_hungarian_base_name(name, known)] += freq
+    # "Anna" alone refers to "Kovács Anna" when she is the only full-name match.
+    full_by_given: dict[str, list[str]] = {}
+    for name in merged:
+        parts = name.split()
+        if len(parts) >= 2:
+            full_by_given.setdefault(parts[-1], []).append(name)
+    for name in list(merged):
+        owners = full_by_given.get(name) if ' ' not in name else None
+        if owners and len(owners) == 1:
+            merged[owners[0]] += merged.pop(name)
+    characters = []
+    for name, freq in merged.most_common(top_n * 2):
+        if name in _HU_STOP or len(name) < 2:
+            continue
+        characters.append({'name': name, 'frequency': freq})
+        if len(characters) >= top_n:
+            break
+    return characters
+
+
+def extract_characters(text: str, top_n: int = 20, language: str | None = None) -> list[dict]:
+    if language is None:
+        from core.parser.language import detect_language
+
+        language = detect_language(text)
+    if str(language or '').lower().startswith('hu'):
+        chars = extract_characters_hungarian(text, top_n)
+    else:
+        # Always attempt spaCy (preferred); regex is only the degraded fallback
+        chars = extract_characters_spacy(text, top_n)
 
     # Enrich with gender + voice profile
     for ch in chars:

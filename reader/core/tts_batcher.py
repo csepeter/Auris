@@ -18,7 +18,8 @@ from typing import Callable
 class _PendingCall:
     key: object
     item: dict
-    priority: bool = False
+    # None: legacy caller without a marker; False: explicit look-ahead.
+    priority: bool | None = None
     event: threading.Event = field(default_factory=threading.Event)
     result: dict | None = None
     error: Exception | None = None
@@ -42,7 +43,7 @@ class InteractiveTTSBatcher:
         self._by_key: dict[object, _PendingCall] = {}
         self._worker_running = False
 
-    def submit(self, key: object, item: dict, *, priority: bool = False) -> dict:
+    def submit(self, key: object, item: dict, *, priority: bool | None = None) -> dict:
         """Queue one item and wait for its individual batch result.
 
         Identical in-flight keys share the same result, preventing duplicate
@@ -51,7 +52,10 @@ class InteractiveTTSBatcher:
         with self._lock:
             call = self._by_key.get(key)
             if call is None:
-                call = _PendingCall(key=key, item=dict(item), priority=bool(priority))
+                call = _PendingCall(
+                    key=key, item=dict(item),
+                    priority=None if priority is None else bool(priority),
+                )
                 self._by_key[key] = call
                 self._queue.append(call)
             elif priority:
@@ -85,16 +89,29 @@ class InteractiveTTSBatcher:
         call.event.set()
 
     def _drain(self) -> None:
-        if self._collect_sec:
-            time.sleep(self._collect_sec)
-
+        # Look-ahead requests are collected briefly into one model batch, but
+        # playback-critical requests start immediately instead of waiting for
+        # the collection window.
+        deadline = time.monotonic() + self._collect_sec
+        saw_priority = False
         while True:
             with self._lock:
-                batch = self._queue
-                self._queue = []
-                if not batch:
+                priority = [call for call in self._queue if call.priority]
+                now = time.monotonic()
+                if priority:
+                    batch = priority
+                    self._queue = [call for call in self._queue if not call.priority]
+                elif self._queue and now >= deadline:
+                    batch = self._queue
+                    self._queue = []
+                elif self._queue:
+                    batch = None
+                else:
                     self._worker_running = False
                     return
+            if batch is None:
+                time.sleep(min(0.01, max(0.0, deadline - now)))
+                continue
 
             if self._blocked is not None and self._blocked():
                 error = RuntimeError(
@@ -109,12 +126,19 @@ class InteractiveTTSBatcher:
                 # then retain batching throughput for look-ahead requests.
                 priority_calls = [call for call in batch if call.priority]
                 lookahead_calls = [call for call in batch if not call.priority]
-                if not priority_calls:
+                if priority_calls:
+                    saw_priority = True
+                elif not saw_priority and all(call.priority is None for call in batch):
                     # Preserve the original latency behavior for callers that
                     # do not yet provide an explicit priority marker.
                     priority_calls = batch[:1]
                     lookahead_calls = batch[1:]
-                priority_batches = [[call] for call in priority_calls]
+                # The first playback call runs alone for the lowest latency;
+                # further priority calls (the next sentences) share one pack,
+                # which costs about the same GPU time as a single sentence.
+                priority_batches = [priority_calls[:1]] if priority_calls else []
+                if len(priority_calls) > 1:
+                    priority_batches.append(priority_calls[1:])
                 if lookahead_calls:
                     priority_batches.append(lookahead_calls)
                 for work_batch in priority_batches:

@@ -2,6 +2,7 @@ import base64
 import re
 from html.parser import HTMLParser
 
+from core.parser.language import detect_language
 from core.parser.structure import attach_blocks, StructuredText, blocks_from_lines
 from core.parser.sections import HU_NAMED_SECTIONS, HU_ORDINAL
 
@@ -285,7 +286,7 @@ def parse(file_path):
     author = author[0][0] if author else "Unknown Author"
 
     language = book.get_metadata("DC", "language")
-    language = language[0][0][:2] if language else "en"
+    language = (language[0][0] or "")[:2].lower() if language else ""
 
     cover_b64 = None
     for item in book.get_items_of_type(ebooklib.ITEM_COVER):
@@ -408,6 +409,12 @@ def parse(file_path):
             ]
 
     attach_blocks(chapters)
+    # Many Hungarian EPUBs omit dc:language or carry a template's "en". The
+    # Hungarian normalizer and TTS language depend on it, so trust the text.
+    sample = " ".join(str(ch.get("content") or "") for ch in chapters[:12])
+    detected = detect_language(sample, default="")
+    if detected == "hu" or not language:
+        language = detected or language or "en"
     return {
         "title": title,
         "author": author,

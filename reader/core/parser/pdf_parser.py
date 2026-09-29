@@ -3,6 +3,7 @@ import base64
 import unicodedata
 
 from core.parser.language import detect_language
+from core.text_cleanup import should_join_hyphenated
 from core.parser.structure import attach_blocks
 from core.parser.sections import EXPLICIT_MARKER_THRESHOLD, is_explicit_section
 
@@ -128,7 +129,12 @@ def _merge_pdf_blocks(blocks):
             and re.search(r"[^\W\d_][-\u00ad]$", output, re.UNICODE)
             and re.match(r"[a-záéíóöőúüű]", text)
         ):
-            output = output[:-1] + text
+            # A soft hyphen always joins; a visible hyphen joins only when it
+            # is a typesetting break, not a compound hyphen (Kossuth-díj).
+            if output.endswith('­') or should_join_hyphenated(output[:-1], text):
+                output = output[:-1] + text
+            else:
+                output += text
         elif block.get('kind') or previous_kind or (block.get('paragraph_start') and not (
             previous_page is not None and block.get('page') != previous_page
             and re.match(r'[a-záéíóöőúüű]', text)

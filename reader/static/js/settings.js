@@ -79,7 +79,7 @@ async function loadSettings() {
   document.getElementById('higgs-temperature').value = _settings.higgs_temperature ?? 0.8;
   document.getElementById('higgs-top-p').value = _settings.higgs_top_p ?? 0.95;
   document.getElementById('higgs-top-k').value = _settings.higgs_top_k ?? 50;
-  document.getElementById('higgs-max-new-tokens').value = _settings.higgs_max_new_tokens ?? 1024;
+  document.getElementById('higgs-max-new-tokens').value = _settings.higgs_max_new_tokens ?? 2048;
   document.getElementById('higgs-seed').value = _settings.higgs_seed ?? -1;
   document.getElementById('higgs-prompt-mode').value =
     _settings.higgs_prompt_mode || 'raw';
@@ -160,6 +160,8 @@ async function loadSettings() {
   document.getElementById('subtitle-format').value = _settings.subtitle_format || 'ass';
   document.getElementById('audio-mastering').checked =
     _settings.audio_mastering !== false;
+  const anchor = document.getElementById('voice-design-anchor');
+  if (anchor) anchor.checked = _settings.voice_design_anchor !== false;
 
   refreshAccelStatus();
 
@@ -520,29 +522,40 @@ async function checkSpacy() {
   const block      = document.getElementById('spacy-status-block');
   const installSec = document.getElementById('spacy-install-section');
   const d = await fetch('/api/settings/spacy-status').then(r => r.json());
+  const huBtn = document.getElementById('spacy-hu-install-btn');
+  const enBtn = document.getElementById('spacy-install-btn');
 
   if (!d.installed) {
-    block.innerHTML = '<span class="status-error">spaCy not installed.</span> Run: <code>pip install spacy</code> then restart the app.';
-    installSec.classList.remove('hidden');
-  } else if (!d.model_installed) {
-    block.innerHTML = '<span class="status-warn">spaCy installed but <code>en_core_web_sm</code> model is missing.</span>';
-    installSec.classList.remove('hidden');
-  } else {
-    block.innerHTML = '<span class="status-ok">spaCy + en_core_web_sm ready.</span>';
+    block.innerHTML = '<span class="status-error">A spaCy nincs telepítve.</span> Futtasd: <code>reader\.venv\Scripts\python.exe -m pip install spacy</code>, majd indítsd újra az Aurist.';
     installSec.classList.add('hidden');
+  } else {
+    const hu = d.hu_model_installed
+      ? `<span class="status-ok">Magyar: ${esc(d.hu_model)} kész.</span>`
+      : '<span class="status-warn">Magyar: a HuSpaCy modell hiányzik (kb. 130 MB); nélküle csak a párbeszéd-igék alapján ismeri fel a neveket.</span>';
+    const en = d.model_installed
+      ? '<span class="status-ok">Angol: en_core_web_sm kész.</span>'
+      : '<span class="muted">Angol: en_core_web_sm nincs telepítve (csak angol könyvekhez kell).</span>';
+    block.innerHTML = `${hu}<br>${en}`;
+    installSec.classList.toggle('hidden', d.hu_model_installed && d.model_installed);
+    if (huBtn) huBtn.classList.toggle('hidden', !!d.hu_model_installed);
+    if (enBtn) enBtn.classList.toggle('hidden', !!d.model_installed);
   }
 
   if (d.error) block.innerHTML += `<br><span class="muted" style="font-size:.8rem">${esc(d.error)}</span>`;
 }
 
-async function installSpacy() {
-  const btn  = document.getElementById('spacy-install-btn');
+async function installSpacy(language = 'hu') {
+  const btn  = document.getElementById(language === 'hu' ? 'spacy-hu-install-btn' : 'spacy-install-btn');
   const hint = document.getElementById('spacy-install-hint');
   btn.disabled     = true;
-  hint.textContent = 'Telepítés… this may take a minute.';
+  hint.textContent = 'Telepítés… ez egy-két percig is tarthat.';
   hint.className   = 'status-hint status-warn';
 
-  const r = await fetch('/api/settings/spacy-install', { method: 'POST' });
+  const r = await fetch('/api/settings/spacy-install', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({language}),
+  });
   const d = await r.json();
 
   if (d.ok) {
@@ -552,8 +565,8 @@ async function installSpacy() {
   } else {
     hint.textContent = d.message || 'A telepítés nem sikerült.';
     hint.className   = 'status-hint status-error';
-    btn.disabled     = false;
   }
+  btn.disabled = false;
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────────
@@ -605,6 +618,7 @@ async function saveSettingsValues() {
     audio_format:      document.getElementById('audio-format').value,
     subtitle_format:   document.getElementById('subtitle-format').value,
     audio_mastering:   document.getElementById('audio-mastering').checked,
+    voice_design_anchor: document.getElementById('voice-design-anchor')?.checked !== false,
     theme:             document.getElementById('theme-select').value,
     font_family:       document.getElementById('font-family').value,
     font_size:         parseInt(document.getElementById('font-size').value) || 18,

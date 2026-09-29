@@ -2,7 +2,7 @@ const studioWindow = typeof window === "undefined" ? {} : window;
 const studioDocument = typeof document === "undefined" ? null : document;
 const BOOK_ID = studioWindow.BOOK_ID;
 let narratorInstruct = studioWindow.NARRATOR_INSTRUCT || "";
-const DEFAULT_NARRATOR_INSTRUCT = "male, elderly, low pitch, british accent";
+const DEFAULT_NARRATOR_INSTRUCT = "male, middle-aged, low pitch";
 const CURRENT_CHAPTER_ID = studioWindow.CURRENT_CHAPTER_ID !== null
   && Number.isInteger(Number(studioWindow.CURRENT_CHAPTER_ID))
   ? Number(studioWindow.CURRENT_CHAPTER_ID)
@@ -194,7 +194,7 @@ function updateInstructPreview(charId) {
 function getNarratorInstruct() {
   return buildInstruct(
     document.getElementById("narrator-gender")?.value || "male",
-    document.getElementById("narrator-age")?.value || "elderly",
+    document.getElementById("narrator-age")?.value || "middle-aged",
     document.getElementById("narrator-pitch")?.value || "low pitch",
     document.getElementById("narrator-accent")?.value || "",
     narratorInstruct,

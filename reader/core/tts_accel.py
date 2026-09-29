@@ -37,6 +37,12 @@ ACCEL_MODES = ("off", "auto", "eager", "cuda_graph", "triton", "hybrid")
 # Keeping every graph alive is counterproductive: each graph retains a large
 # logits buffer and its CUDA-private allocations.
 MAX_CACHED_GRAPHS = 4
+# Optional: pad sequence lengths to this multiple so packs of similar length
+# replay one graph. Disabled: on an RTX 3090 (2026-09-29, 16 steps, 4-sentence
+# Hungarian packs) it saved one capture per three shapes but warm packs were
+# ~8% slower, and different kernel shapes changed the iterative decoding
+# (outputs not waveform-identical). Padded positions are masked out.
+GRAPH_LENGTH_BUCKET = 0
 
 
 class CUDAGraphForward:
@@ -46,11 +52,15 @@ class CUDAGraphForward:
     with the same shape replay it (big win across 16–32 unmasking steps).
     """
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Any, bucket: int = GRAPH_LENGTH_BUCKET) -> None:
         self._model = model
         self._original_forward = model.forward
         self._graphs: dict[tuple, dict] = {}
         self.disabled_reason = ""
+        self._bucket = max(0, int(bucket or 0))
+        config = getattr(model, "config", None)
+        self._pad_id = int(getattr(config, "audio_mask_id", 1024) or 1024)
+        self.stats = {"captures": 0, "replays": 0, "padded": 0}
         # TTSEngine serializes calls and consumes outputs before the next
         # replay. Independent shape graphs can share their private pool.
         self._pool = None
@@ -113,13 +123,16 @@ class CUDAGraphForward:
         graph = torch.cuda.CUDAGraph()
         if self._pool is None:
             self._pool = torch.cuda.graph_pool_handle()
-        with torch.cuda.graph(graph, pool=self._pool):
+        # thread_local: a second export lane launching kernels on its own
+        # stream must not invalidate this lane's capture.
+        with torch.cuda.graph(graph, pool=self._pool, capture_error_mode="thread_local"):
             static_output = self._original_forward(
                 static_input_ids,
                 static_audio_mask,
                 **kwargs,
             )
 
+        self.stats["captures"] += 1
         entry = {
             "graph": graph,
             "static_input_ids": static_input_ids,
@@ -169,6 +182,13 @@ class CUDAGraphForward:
                 input_ids, audio_mask, labels, attention_mask, document_ids, position_ids
             )
 
+        original_length = None
+        padded = self._pad_to_bucket(input_ids, audio_mask, attention_mask, position_ids)
+        if padded is not None:
+            original_length = input_ids.shape[-1]
+            input_ids, audio_mask, attention_mask = padded
+            self.stats["padded"] += 1
+
         key = self._shape_key(input_ids, audio_mask, attention_mask, document_ids, position_ids)
         if key not in self._graphs:
             try:
@@ -197,11 +217,54 @@ class CUDAGraphForward:
             entry["static_pos_ids"].copy_(position_ids)
 
         entry["graph"].replay()
-        return entry["static_output"]
+        self.stats["replays"] += 1
+        output = entry["static_output"]
+        if original_length is not None:
+            return _slice_logits(output, original_length)
+        return output
+
+    def _pad_to_bucket(self, input_ids, audio_mask, attention_mask, position_ids):
+        """Pad [N, C, T] inputs and their [N, 1, T, T] mask to a bucket length."""
+        if not self._bucket or attention_mask is None or position_ids is not None:
+            return None
+        if input_ids.dim() != 3 or audio_mask.dim() != 2 or attention_mask.dim() != 4:
+            return None
+        if attention_mask.dtype.is_floating_point:
+            return None
+        length = int(input_ids.shape[-1])
+        target = -(-length // self._bucket) * self._bucket
+        if target == length:
+            return None
+        import torch
+
+        extra = target - length
+        ids = torch.nn.functional.pad(input_ids, (0, extra), value=self._pad_id)
+        mask = torch.nn.functional.pad(audio_mask, (0, extra), value=False)
+        attn = torch.nn.functional.pad(attention_mask, (0, extra, 0, extra), value=False)
+        # Padded queries attend only to themselves: finite values that no real
+        # position can see, since real rows never attend to these columns.
+        idx = torch.arange(length, target, device=attn.device)
+        attn[:, :, idx, idx] = True
+        return ids, mask, attn
 
     def clear(self) -> None:
         self._graphs.clear()
         self._pool = None
+
+
+def _slice_logits(output, length: int):
+    """Drop padded positions from a model output whose logits are [N, C, T, V]."""
+    import copy
+
+    logits = getattr(output, "logits", None)
+    if logits is None:
+        return output[..., :length, :] if hasattr(output, "shape") else output
+    sliced = copy.copy(output)
+    try:
+        sliced.logits = logits[:, :, :length, :]
+    except Exception:
+        sliced["logits"] = logits[:, :, :length, :]
+    return sliced
 
 
 def _fast_predict_tokens_with_scoring(

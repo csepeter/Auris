@@ -12,6 +12,7 @@
         <a href="#speaker-review">Szereplők ellenőrzése</a>
         <a href="#llm-detection">Helyi LLM felismerés</a>
         <a href="#text-editing">Szöveg és felolvasási ritmus</a>
+        <a href="#hungarian-text">Magyar szövegfeldolgozás</a>
         <a href="#import-tools">OCR és Calibre</a>
         <a href="#voices">Hangok és klónozás</a>
         <a href="#omnivoice">OmniVoice</a>
@@ -439,6 +440,54 @@
       <p>A szerkezeti és időzítési beállítások külön adatok, nem a felolvasandó szövegbe írt vezérlőkódok. Ebben a változatban nincs automatikus LLM-alapú rendezés vagy új, blokkonkénti hangulat- és hangsúlyszerkesztő.</p>
     </section>
 
+    <section class="docs-section" id="hungarian-text">
+      <div class="docs-section-heading"><span class="docs-section-index">HU</span><div>
+        <h2>Magyar szövegfeldolgozás</h2>
+        <p>Az Auris a magyar könyveket felolvasás előtt magyar szabályok szerint bontja mondatokra és alakítja kiejthető szöveggé. Az olvasóban látható szöveg nem változik.</p>
+      </div></div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Importáláskor</h3>
+          <ul class="docs-check-list">
+            <li>A lágy kötőjel, a nulla szélességű jelek és a nem törhető szóköz eltűnik, így a szavak nem esnek szét a felolvasásban.</li>
+            <li>A régi, Latin-1 betűkészletből származó <code>õ</code>/<code>û</code> magyar szövegben <code>ő</code>/<code>ű</code> lesz. Más nyelvű könyv (például portugál) érintetlen marad.</li>
+            <li>PDF-ben a sorvégi elválasztás összeolvad (<em>asztal-terítő</em> → <em>asztalterítő</em>), a nagybetűs előtagú összetétel kötőjele viszont megmarad (<em>Kossuth-díj</em>). Ehhez a magyar elválasztási szótárat használja.</li>
+            <li>Ha egy EPUB nem jelöli a nyelvét, vagy tévesen angolnak jelöli, a szöveg alapján magyar lesz.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Mondatok és párbeszéd</h3>
+          <ul class="docs-check-list">
+            <li>A mondathatár ékezetes nagybetű (<em>Éjjel</em>, <em>Ő</em>) és magyar idézőjel (<code>„…”</code>, <code>»…«</code>) előtt is felismerhető.</li>
+            <li>Nem ér véget a mondat rövidítés (<em>pl.</em>, <em>kb.</em>, <em>dr.</em>, <em>Kr. e.</em>), sorszám (<em>IV. Béla</em>, <em>1848. március</em>) és névkezdőbetű (<em>Szabó J. Éva</em>, <em>Gy. Kovács</em>) után.</li>
+            <li>A gondolatjeles párbeszédben (<code>– Gyere ide! – mondta Anna.</code>) a narrátori közbevetés és a folytatódó megszólalás elkülönül.</li>
+            <li>A magyar hangulatszavak is hatnak: <em>suttogta</em> halkabb, <em>nevetett</em> nevetést, <em>sóhajtott</em> sóhajt jelez, a <em>lassan</em> lassít.</li>
+          </ul>
+        </div>
+      </div>
+      <h3>Felolvasás előtti normalizálás</h3>
+      <div class="settings-guide-wrap">
+        <table class="settings-guide">
+          <thead><tr><th>Írott alak</th><th>Felolvasott alak</th></tr></thead>
+          <tbody>
+            <tr><td><code>március 15-e</code>, <code>augusztus 20-ig</code></td><td>március tizenötödike, augusztus huszadikáig</td></tr>
+            <tr><td><code>2024. 10. 05.</code></td><td>kétezer-huszonnégy október ötödike</td></tr>
+            <tr><td><code>I. István</code>, <code>a XX. században</code></td><td>Első István, a huszadik században</td></tr>
+            <tr><td><code>7.30-kor</code>, <code>7:30</code></td><td>hét óra harminc perckor, hét óra harminc perc</td></tr>
+            <tr><td><code>2-3 napos</code>, <code>1914–1918</code></td><td>két-három napos, ezerkilencszáztizennégytől ezerkilencszáztizennyolcig</td></tr>
+            <tr><td><code>500 Ft-ért</code>, <code>12 km</code>, <code>€10</code>, <code>-5 fok</code></td><td>ötszáz forintért, tizenkét kilométer, tíz euró, mínusz öt fok</td></tr>
+            <tr><td><code>3,5</code>, <code>½</code>, <code>2/3</code></td><td>három egész öt tized, fél, kétharmad</td></tr>
+            <tr><td><code>pl.</code>, <code>kb.</code>, <code>stb.</code>, <code>Kft.</code></td><td>például, körülbelül, és a többi, káefté</td></tr>
+            <tr><td><code>BKV</code>, <code>EU-ban</code>, <code>06-1-234-5678</code></td><td>békávé, e-u-ban, nulla hat, egy, kétszázharmincnégy, ötvenhat hetvennyolc</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A normalizálás a <strong>Szövegnormalizálás</strong> beállítással kapcsolható ki. Ha egy frissítés javít a normalizáláson, az érintett magyar hangrészek a következő lejátszáskor vagy exportkor maguktól újragenerálódnak; a változatlan részek a gyorsítótárból jönnek. Az ismert korlátok: a <em>V. Kovács</em> alakú kezdőbetűt uralkodói sorszámnak olvassa, a pontos időt (<em>Este 8. Megérkeztek</em>) pedig nem választja le külön mondatnak.</p>
+      <h3>Szereplők nyelvi modell nélkül</h3>
+      <p>A <strong>Beállítások → Szereplőfelismerés</strong> helyi módja magyar könyvnél a HuSpaCy magyar névfelismerőt használja. A modell (kb. 130 MB) ugyanitt a <strong>Magyar modell (HuSpaCy) telepítése</strong> gombbal tölthető le. Nélküle a program a párbeszéd-igékből (<em>mondta Anna</em>, <em>kérdezte Péter</em>) gyűjti a neveket. A ragozott alakok (<em>Annának</em>, <em>Péterrel</em>) és a keresztnév–teljes név párok (<em>Anna</em> → <em>Kovács Anna</em>) összevonódnak. A nemet a magyar utónevek, a <em>-né</em> végződés és a megszólítások (<em>bácsi</em>, <em>néni</em>, <em>úr</em>) alapján becsüli. A nyelvi modelles mód továbbra is pontosabb a párbeszédek szereplőhöz rendelésében.</p>
+      <p>Új szereplők és az alapértelmezett narrátor hangleírása nem tartalmaz idegen akcentust, mert az angolos hangsúly felé húzná a magyar kiejtést. Akcentus a Hangstúdióban továbbra is választható.</p>
+    </section>
+
     <section class="docs-section" id="import-tools">
       <div class="docs-section-heading"><span class="docs-section-index">OCR</span><div><h2>Opcionális OCR és Calibre-import</h2><p>A Könyvtár oldalon, az Opcionális importeszközök panelen állítható be fájlválasztás előtt.</p></div></div>
       <div class="docs-prose"><h3>Szkennelt PDF és képfájlok</h3>
@@ -537,9 +586,12 @@ ffprobe -version</code></pre>
           <p>
             A <strong>Beállítások → Kiejtés</strong> alatt szóhoz vagy
             kifejezéshez megadható a felolvasandó alak. A könyvspecifikus szabály
-            felülírja a minden könyvre érvényes szabályt. Az olvasóban látható
-            eredeti szöveg nem változik; a szabály törölhető, és módosításkor az
-            érintett hangcache újragenerálódik.
+            felülírja a minden könyvre érvényes szabályt. Egyszavas szabály a
+            ragozott alakokra is érvényes: a <em>Szergej → Szerjej</em> szabály a
+            <em>Szergejjel</em>, <em>Szergejt</em> alakot is átírja, az <em>Anna</em>
+            szabály az <em>Annának</em> alakot is. Más szóvégre (<em>Gorcsevics</em>)
+            nem hat. Az olvasóban látható eredeti szöveg nem változik; a szabály
+            törölhető, és módosításkor az érintett hangcache újragenerálódik.
           </p>
         </div>
       </div>
@@ -547,7 +599,7 @@ ffprobe -version</code></pre>
         <span class="docs-callout-icon" aria-hidden="true">123</span>
         <div>
           <strong>A magyar számok felolvasás előtt nyelvtanilag helyes alakra alakulnak.</strong>
-          <p>Az Auris felismeri többek között a számneveket, sorszámokat, évszámokat, dátumokat, időpontokat, százalékokat, Celsius-fokot és a kötőjeles magyar ragokat. Ez az OmniVoice és a Higgs nyers módjában is működik, ha a szövegnormalizálás be van kapcsolva.</p>
+          <p>Az Auris felismeri többek között a számneveket, sorszámokat, évszámokat, dátumokat, időpontokat, telefonszámokat, pénznemeket, mértékegységeket, törteket, rövidítéseket és a kötőjeles magyar ragokat. Ez az OmniVoice és a Higgs nyers módjában is működik, ha a szövegnormalizálás be van kapcsolva. Részletek: <a href="#hungarian-text">Magyar szövegfeldolgozás</a>.</p>
         </div>
       </div>
       <div class="docs-callout">
@@ -590,7 +642,7 @@ ffprobe -version</code></pre>
           <ul class="docs-check-list">
             <li><strong>600+ nyelv</strong>; ismert nyelvnél az Auris átadja a nyelvkódot.</li>
             <li>Voice clone pontos referenciahanggal és referenciaszöveggel.</li>
-            <li>Voice design nem, kor, hangmagasság és akcentus leírásából.</li>
+            <li>Voice design nem, kor, hangmagasság és akcentus leírásából. A leírt hang alapértelmezés szerint egyszer egy magyar mintamondatot mond el, és a könyv minden szakasza ezt a klipet klónozza (<strong>Leírt hangok rögzítése referenciaklippel</strong>), így a hangszín nem változik szakaszról szakaszra, és az export két sávot is használhat.</li>
             <li>Lista/batch generálás és újrahasznosítható clone prompt.</li>
             <li>Automatikus hosszú szöveg-darabolás és alkalmazásszintű szegmensek.</li>
             <li>OmniVoice-specifikus exportoptimalizálás és opcionális kétmodell-sáv.</li>
@@ -618,7 +670,8 @@ ffprobe -version</code></pre>
             <tr><td>GPU batch size</td><td>Egy generate hívásban együtt, de külön hullámformaként feldolgozott szövegegységek száma.</td><td><strong>Auto</strong></td></tr>
             <tr><td>Exact spoken-line boundaries</td><td>Minden szövegegység külön hangfájlt kap; nincs karakterszám alapján visszavágott, összekevert rövid sor.</td><td><strong>Bekapcsolva</strong></td></tr>
             <tr><td>GPU-gyorsítás</td><td>Alap vagy optimalizált PyTorch, NVIDIA CUDA Graph, kísérleti Triton/hibrid.</td><td>Automatikus; munkaterhelésenként mérendő</td></tr>
-            <tr><td>Parallel export workers</td><td>Második modell csak nagyobb voice-clone export idejére.</td><td><strong>Auto</strong></td></tr>
+            <tr><td>Parallel export workers</td><td>Második modell csak nagyobb voice-clone export idejére; a referenciaklippel rögzített leírt hangok is ide tartoznak.</td><td><strong>Auto</strong></td></tr>
+            <tr><td>Leírt hangok rögzítése</td><td>A leírásból egyszer referenciaklip készül, a szakaszok ezt klónozzák.</td><td><strong>Bekapcsolva</strong></td></tr>
           </tbody>
         </table>
       </div>
@@ -970,6 +1023,18 @@ ffprobe -version</code></pre>
             <tr><td>Exact spoken-line boundaries</td><td><strong>Bekapcsolva</strong></td><td><strong>Bekapcsolva</strong></td></tr>
             <tr><td>GPU-gyorsítás</td><td><strong>Auto; saját méréssel ellenőrizve</strong></td><td><strong>Auto; saját méréssel ellenőrizve</strong></td></tr>
             <tr><td>Parallel export workers</td><td><strong>2</strong></td><td><strong>2</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="settings-guide-wrap" style="margin-top:22px">
+        <table class="settings-guide">
+          <thead><tr><th>Export- és lejátszásgyorsítás (3.5.0)</th><th>Mit csinál?</th></tr></thead>
+          <tbody>
+            <tr><td>Könyvszintű kötegelés</td><td>A kijelölt fejezetek függő szakaszai egy menetben, hangonként és hossz szerint csoportosítva kerülnek a GPU-ra; nincs fejezetenként félig üres csomag.</td></tr>
+            <tr><td>Párhuzamos mastering</td><td>A hangerő-kiegyenlítés fejezetenként, több FFmpeg-folyamatban fut. Saját mérés (30 perces szintetikus könyv, 10 fejezet, mastering bekapcsolva): M4B 92,6 s → 57,4 s.</td></tr>
+            <tr><td>Kevesebb memória</td><td>A fejezet-WAV és az MP3 blokkonként, közvetlenül FFmpeg-gel készül, a teljes fejezet nem kerül a memóriába.</td></tr>
+            <tr><td>Gyorsabb első lejátszás</td><td>Betöltés után egy rövid magyar mondat bemelegíti a modellt; a lejátszandó mondat nem vár a 75 ms-os gyűjtési ablakra, a következő mondatok egy csomagban készülnek.</td></tr>
+            <tr><td>Higgs referencia</td><td>A referenciahang kódolása hangonként egyszer történik meg, a további megszólalások újrahasználják.</td></tr>
           </tbody>
         </table>
       </div>

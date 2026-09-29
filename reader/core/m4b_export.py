@@ -56,17 +56,18 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
     with tempfile.TemporaryDirectory(prefix='.m4b-', dir=destination) as work:
         work = Path(work)
         raw = work / 'source.wav'
-        timeline, chapters, cursor = [], [], 0
         total = sum(len(c.get('segments') or []) for c in chapters_data)
         done = 0
-        # RF64 supports books whose temporary PCM audio exceeds 4 GiB.
-        with sf.SoundFile(raw, 'w', samplerate=e.SAMPLE_RATE, channels=1,
-                          format='RF64', subtype='PCM_16') as out:
-            for ci, chapter in enumerate(chapters_data):
-                segments = chapter.get('segments') or []
-                if not segments:
-                    raise ValueError('Üres fejezet nem exportálható.')
-                start = cursor
+        # 1) Each chapter is written to its own PCM file (bounded memory).
+        pieces = []  # (path, frames, [(segment, start_frame, end_frame)], title)
+        for ci, chapter in enumerate(chapters_data):
+            segments = chapter.get('segments') or []
+            if not segments:
+                raise ValueError('Üres fejezet nem exportálható.')
+            piece = work / f'chapter-{ci:05d}.wav'
+            local, cursor = [], 0
+            with sf.SoundFile(piece, 'w', samplerate=e.SAMPLE_RATE, channels=1,
+                              format='RF64', subtype='PCM_16') as out:
                 for si, segment in enumerate(segments):
                     report(f'Hangok összefűzése: {done}/{total}')
                     path = segment.get('audio_path')
@@ -77,28 +78,71 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
                         if source.samplerate != e.SAMPLE_RATE or not len(source):
                             raise ValueError('Érvénytelen mondathang vagy mintavételi frekvencia.')
                         for block in source.blocks(blocksize=65536, dtype='float32', always_2d=True):
-                            if check_cancelled:
-                                check_cancelled()
                             out.write(block.mean(axis=1))
                             cursor += len(block)
-                    timeline.append({**segment, 't_start': seg_start / e.SAMPLE_RATE,
-                                     't_end': cursor / e.SAMPLE_RATE})
+                    local.append((segment, seg_start, cursor))
                     pause = (e.pause_after_segment(segment, segments[si + 1])
                              if si + 1 < len(segments) else
                              e.CHAPTER_GAP_SEC if ci + 1 < len(chapters_data) else 0)
                     silence = round(pause * e.SAMPLE_RATE)
-                    out.write(np.zeros(silence, dtype='float32'))
-                    cursor += silence
+                    if silence:
+                        out.write(np.zeros(silence, dtype='float32'))
+                        cursor += silence
                     done += 1
-                chapters.append((start, cursor, chapter.get('chapter_title') or f'Fejezet {ci + 1}'))
+            pieces.append([piece, cursor, local,
+                           chapter.get('chapter_title') or f'Fejezet {ci + 1}'])
         report(f'Hangok összefűzése: {total}/{total}')
+
+        # 2) Chapters are mastered in parallel FFmpeg processes; loudness is
+        #    matched per chapter, as in the chapter-folder export.
         applied, warning = False, None
         if mastering:
+            from concurrent.futures import ThreadPoolExecutor
+
             report('Hangerő-kiegyenlítés: elemzés és feldolgozás…')
-            mastered = work / 'mastered.wav'
-            applied, warning = e._master_wav(str(raw), str(mastered), runner=run)
-            if applied:
-                raw = mastered
+
+            def master(piece):
+                target_path = piece[0].with_name(piece[0].stem + '-mastered.wav')
+                ok, problem = e._master_wav(str(piece[0]), str(target_path), runner=run)
+                return target_path if ok else None, problem
+
+            workers = min(e._export_workers(), len(pieces)) or 1
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='m4b-master') as pool:
+                outcomes = list(pool.map(master, pieces))
+            problems = [problem for path, problem in outcomes if path is None and problem]
+            if all(path is not None for path, _ in outcomes):
+                applied = True
+                for piece, (path, _) in zip(pieces, outcomes):
+                    piece[0] = path
+            else:
+                # All or nothing: mixing mastered and raw chapters would make
+                # loudness jump between chapters.
+                warning = problems[0] if problems else 'A hangerő-kiegyenlítés nem sikerült.'
+                for path, _ in outcomes:
+                    if path is not None:
+                        path.unlink(missing_ok=True)
+
+        # 3) Chapters are joined; boundaries come from the actual file lengths.
+        report('Fejezetek összefűzése…')
+        timeline, chapters, cursor = [], [], 0
+        with sf.SoundFile(raw, 'w', samplerate=e.SAMPLE_RATE, channels=1,
+                          format='RF64', subtype='PCM_16') as out:
+            for path, raw_frames, local, title in pieces:
+                start = cursor
+                with sf.SoundFile(path) as source:
+                    for block in source.blocks(blocksize=262144, dtype='float32', always_2d=True):
+                        if check_cancelled:
+                            check_cancelled()
+                        out.write(block.mean(axis=1))
+                        cursor += len(block)
+                length = cursor - start
+                scale = length / raw_frames if raw_frames else 1.0
+                for segment, seg_start, seg_end in local:
+                    timeline.append({**segment,
+                                     't_start': (start + seg_start * scale) / e.SAMPLE_RATE,
+                                     't_end': (start + seg_end * scale) / e.SAMPLE_RATE})
+                chapters.append((start, cursor, title))
+                Path(path).unlink(missing_ok=True)
         tags = {'title': book_title, 'artist': book_author, 'album': book_title,
                 'language': metadata.get('language'), 'description': metadata.get('description'),
                 'series': metadata.get('series'), 'series-part': metadata.get('series_index'),

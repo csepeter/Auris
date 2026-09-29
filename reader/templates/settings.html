@@ -293,11 +293,12 @@
       <div class="status-block">Az Auris fejezetenként kér beszélő-hozzárendelést. A kontextusméretet a helyi szerveren állíthatod be.</div>
     </div>
     <div id="legacy-character-settings" class="sub-panel hidden">
-      <p class="section-desc">A korábbi felismerő angolra készült, a párbeszédek hozzárendelése korlátozott. Helyi tartalékként elérhető.</p>
+      <p class="section-desc">Nyelvi modell nélküli, helyi szereplőfelismerés. Magyar könyveknél a HuSpaCy névfelismerőjét és a magyar párbeszéd-hozzárendelő igéket (<em>mondta, kérdezte…</em>) használja, a ragozott névalakokat („Annának”) összevonja. A párbeszédek szereplőhöz rendelése korlátozottabb, mint a nyelvi modelles módban.</p>
       <div id="spacy-status-block" class="status-block">Ellenőrzés…</div>
       <div id="spacy-install-section" class="hidden">
         <div class="setting-row">
-          <button class="btn btn-primary" id="spacy-install-btn" onclick="installSpacy()">en_core_web_sm telepítése</button>
+          <button class="btn btn-primary" id="spacy-hu-install-btn" onclick="installSpacy('hu')">Magyar modell (HuSpaCy) telepítése</button>
+          <button class="btn btn-ghost" id="spacy-install-btn" onclick="installSpacy('en')">Angol modell (en_core_web_sm) telepítése</button>
           <span id="spacy-install-hint" class="status-hint"></span>
         </div>
       </div>
@@ -399,6 +400,11 @@
       <label class="checkbox-label">
         <input type="checkbox" id="audio-mastering">Export hangjának utófeldolgozása</label>
       <span class="muted" style="font-size:.78rem">Az FFmpeg fejezetenként finom hangszínszabályozást, kompressziót és kétmenetes hangerő-kiegyenlítést végez: −19 LUFS, 9 LU LRA és −3 dB true peak.</span>
+    </div>
+    <div class="setting-row">
+      <label class="checkbox-label">
+        <input type="checkbox" id="voice-design-anchor">Leírt hangok rögzítése referenciaklippel</label>
+      <span class="muted" style="font-size:.78rem">OmniVoice: a leírásból (nem, életkor, hangmagasság) készült hang egyszer egy magyar mintamondatot mond el, és a könyv minden szakasza ezt a klipet klónozza. Így a szereplő hangszíne nem változik szakaszról szakaszra, és az export két GPU-sávot is használhat. Feltöltött referenciahang esetén nincs hatása.</span>
     </div>
     <div class="setting-row">
       <label>Hangformátum</label>

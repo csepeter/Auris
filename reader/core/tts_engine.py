@@ -35,6 +35,14 @@ VOICE_DESIGN_REF_TEXT = (
     "The room is quiet, the day is calm, and every word should sound clear, "
     "natural, and easy to understand."
 )
+# Hungarian anchor sentence: a voice description (voice design) is rendered
+# once into this clip, then every segment clones it, so the timbre stays the
+# same across a book instead of drifting segment by segment.
+VOICE_DESIGN_REF_TEXT_HU = (
+    "Jó napot kívánok. Ez egy nyugodt, tiszta hangminta. Minden szó érthetően, "
+    "természetes hangsúllyal szól, a mondatok végén pedig rövid szünetet tartok."
+)
+VOICE_DESIGN_ANCHOR_VERSION = 1
 VOICE_REF_MIN_ZCR = 0.015
 VOICE_REF_GEN_ATTEMPTS = 4
 VOICE_GENDERS = {"male", "female"}
@@ -61,6 +69,12 @@ DEFAULT_TTS_BATCH_MAX_CHARS = 12000
 # 0 disables coalescing. ~600–900 chars ≈ several sentences / ~15–25s speech.
 DEFAULT_TTS_COALESCE_CHARS = 0
 AUDIO_CACHE_FORMAT_VERSION = 2
+
+
+def _audio_duration(path: str) -> float:
+    """Duration from the WAV header; cache hits must not decode the audio."""
+    info = sf.info(path)
+    return float(info.frames) / float(info.samplerate)
 
 
 def _write_audio_atomic(path: str, audio: np.ndarray, sample_rate: int) -> None:
@@ -582,6 +596,31 @@ def apply_text_normalization(text: str, language: str | None = None) -> str:
     return _num2words_fallback(text, language)
 
 
+def hungarian_normalizer_key(text: str, language: str | None, normalize_text: bool) -> str:
+    """Cache-key suffix that changes when Hungarian normalization changes.
+
+    Without it, a normalizer fix would never reach already cached audio.
+    Other languages keep their historical keys.
+    """
+    if not normalize_text:
+        return ""
+    lang = str(language or "").lower()[:2]
+    if lang == "hu" or (not lang and looks_hungarian(text)):
+        from core import hungarian_numbers
+
+        return f"|hn={getattr(hungarian_numbers, 'NORMALIZER_VERSION', 1)}"
+    return ""
+
+
+def _voice_design_anchor_enabled() -> bool:
+    try:
+        from core import settings as app_settings
+
+        return bool(app_settings.get("voice_design_anchor", True))
+    except Exception:
+        return True
+
+
 def _prompt_cache_key(ref_audio: str, ref_text: str | None) -> str:
     try:
         st = os.stat(ref_audio)
@@ -602,6 +641,7 @@ class TTSEngine:
         self._cancel_load = threading.Event()
         self._load_start_lock = threading.Lock()
         self._load_mutex = threading.Lock()
+        self._anchor_lock = threading.Lock()
         self._error: str | None = None
         self._prompt_mem: dict[str, object] = {}
         # After CUDA OOM, never retry larger packs in this process (avoids
@@ -847,6 +887,8 @@ class TTSEngine:
                 return
             self._ready = True
             if device == "cuda":
+                self._warm_up()
+            if device == "cuda":
                 try:
                     free_b, total_b = torch.cuda.mem_get_info()
                     log.info(
@@ -866,6 +908,30 @@ class TTSEngine:
             log.error("Failed to load OmniVoice: %s", exc)
         finally:
             self._loading = False
+
+    def _warm_up(self) -> None:
+        """Run one short Hungarian sentence so the first real request does
+        not pay for kernel selection, CUDA graph capture and codec setup."""
+        try:
+            from core import settings as app_settings
+
+            if not app_settings.get("tts_warmup", True):
+                return
+        except Exception:
+            pass
+        started = time.time()
+        try:
+            self._synthesize_batch(
+                texts=["Jó napot kívánok."],
+                instruct="male, middle-aged",
+                speeds=[1.0],
+                num_step=_tts_num_step_from_settings(),
+                language="hu",
+                normalize_text=False,
+            )
+            log.info("OmniVoice warm-up finished in %.2fs", time.time() - started)
+        except Exception as exc:
+            log.warning("OmniVoice warm-up skipped: %s", exc)
 
     @staticmethod
     def _cuda_available() -> bool:
@@ -908,6 +974,7 @@ class TTSEngine:
         # the historical key and existing cache entries stay valid.
         if variant:
             payload += f"|rv={variant}"
+        payload += hungarian_normalizer_key(text, language, normalize_text)
         return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -918,15 +985,16 @@ class TTSEngine:
     def _voice_ref_key(instruct: str) -> str:
         return hashlib.md5(instruct.encode("utf-8")).hexdigest()
 
-    def _voice_ref_path(self, instruct: str) -> str:
-        return os.path.join(VOICE_REF_DIR, f"{self._voice_ref_key(instruct)}.wav")
+    def _voice_ref_path(self, instruct: str, language: str | None = None) -> str:
+        if language is None:
+            return os.path.join(VOICE_REF_DIR, f"{self._voice_ref_key(instruct)}.wav")
+        key = self._voice_ref_key(
+            f"{instruct}|{str(language).lower()[:2]}|anchor-v{VOICE_DESIGN_ANCHOR_VERSION}"
+        )
+        return os.path.join(VOICE_REF_DIR, f"anchor_{key}.wav")
 
     def _prompt_path(self, key: str) -> str:
         return os.path.join(VOICE_PROMPT_DIR, f"{key}.pt")
-
-    @staticmethod
-    def _needs_voice_design_stabilization(text: str, instruct: str | None, ref_audio: str | None) -> bool:
-        return bool(instruct and not ref_audio)
 
     def _load_voice_clone_prompt(self, path: str):
         from omnivoice import VoiceClonePrompt
@@ -1210,23 +1278,35 @@ class TTSEngine:
             normalize_text=normalize_text,
         )[0]
 
-    def _ensure_voice_design_reference(self, instruct: str) -> tuple[str, str]:
-        ref_path = self._voice_ref_path(instruct)
+    def _ensure_voice_design_reference(
+        self, instruct: str, language: str | None = None
+    ) -> tuple[str, str]:
+        hungarian = str(language or "").lower().startswith("hu")
+        ref_text = VOICE_DESIGN_REF_TEXT_HU if hungarian else VOICE_DESIGN_REF_TEXT
+        ref_path = self._voice_ref_path(instruct, language if language is not None else None)
         if os.path.exists(ref_path):
             cached_audio, _ = sf.read(ref_path)
             if _audio_zcr(cached_audio) >= VOICE_REF_MIN_ZCR:
-                return ref_path, VOICE_DESIGN_REF_TEXT
+                return ref_path, ref_text
             log.warning("Discarding unstable cached voice reference for '%s'", instruct)
 
         best_audio = None
         best_zcr = -1.0
+        seed = int(self._voice_ref_key(instruct)[:8], 16)
 
         for attempt in range(VOICE_REF_GEN_ATTEMPTS):
+            try:
+                import torch
+
+                torch.manual_seed(seed + attempt)
+            except Exception:
+                pass
             audio = self._synthesize_audio(
-                text=VOICE_DESIGN_REF_TEXT,
+                text=ref_text,
                 instruct=instruct,
                 speed=1.0,
                 num_step=24,
+                language=language or None,
                 normalize_text=False,
             )
             zcr = _audio_zcr(audio)
@@ -1243,14 +1323,49 @@ class TTSEngine:
                 zcr,
             )
 
-        sf.write(ref_path, best_audio, SAMPLE_RATE)
+        os.makedirs(os.path.dirname(ref_path), exist_ok=True)
+        _write_audio_atomic(ref_path, best_audio, SAMPLE_RATE)
         if best_zcr < VOICE_REF_MIN_ZCR:
             log.warning(
                 "Using best-effort voice reference for '%s' despite low zcr=%.4f",
                 instruct,
                 best_zcr,
             )
-        return ref_path, VOICE_DESIGN_REF_TEXT
+        return ref_path, ref_text
+
+    def _resolve_voice(
+        self,
+        instruct: str | None,
+        ref_audio: str | None,
+        ref_text: str | None,
+        language: str | None,
+    ) -> tuple[str | None, str | None, str | None]:
+        """Return the (instruct, ref_audio, ref_text) actually synthesized.
+
+        Reference audio always wins (pure clone). A voice description is
+        anchored to a generated reference clip when the setting allows it.
+        """
+        if ref_audio:
+            return None, ref_audio, ref_text
+        stabilized = _stabilize_voice_design_instruct(instruct)
+        if not stabilized or not _voice_design_anchor_enabled():
+            return stabilized, None, ref_text
+        with self._anchor_lock:
+            path, text = self._ensure_voice_design_reference(stabilized, language or "")
+        return None, path, text
+
+    def anchor_items(self, items: list[dict]) -> list[dict]:
+        """Resolve design voices to anchor clips before work is split."""
+        resolved = []
+        for item in items:
+            instruct, ref_audio, ref_text = self._resolve_voice(
+                item.get("instruct"), item.get("ref_audio"), item.get("ref_text"),
+                item.get("language"),
+            )
+            resolved.append(
+                {**item, "instruct": instruct, "ref_audio": ref_audio, "ref_text": ref_text}
+            )
+        return resolved
 
     def generate(
         self,
@@ -1282,9 +1397,9 @@ class TTSEngine:
         # OmniVoice supports either voice cloning or voice design for a
         # generation. Reference audio takes precedence over any saved style
         # instruction so a narrator/character clone stays a pure clone.
-        effective_instruct = None if ref_audio else _stabilize_voice_design_instruct(instruct)
-        effective_ref_audio = ref_audio
-        effective_ref_text = ref_text
+        effective_instruct, effective_ref_audio, effective_ref_text = self._resolve_voice(
+            instruct, ref_audio, ref_text, language
+        )
 
         key = self.cache_key(
             text,
@@ -1300,10 +1415,10 @@ class TTSEngine:
         path = self.cache_path(key)
 
         if os.path.exists(path):
-            data, sr = sf.read(path)
+            duration = _audio_duration(path)
             return {
                 "audio_path": path,
-                "duration_sec": len(data) / sr,
+                "duration_sec": duration,
                 "cache_hit": True,
                 "cache_key": key,
             }
@@ -1403,9 +1518,9 @@ class TTSEngine:
 
             # Keep cache identity and batch grouping aligned with the actual
             # OmniVoice mode: a reference selects cloning, never design.
-            effective_instruct = None if ref_audio else _stabilize_voice_design_instruct(instruct)
-            effective_ref_audio = ref_audio
-            effective_ref_text = ref_text
+            effective_instruct, effective_ref_audio, effective_ref_text = self._resolve_voice(
+                instruct, ref_audio, ref_text, language
+            )
 
             key = self.cache_key(
                 text,
@@ -1421,12 +1536,12 @@ class TTSEngine:
             path = self.cache_path(key)
 
             if os.path.exists(path):
-                data, sr = sf.read(path)
+                duration = _audio_duration(path)
                 _emit(
                     idx,
                     {
                         "audio_path": path,
-                        "duration_sec": len(data) / sr,
+                        "duration_sec": duration,
                         "cache_hit": True,
                         "cache_key": key,
                     },
@@ -1697,6 +1812,9 @@ class TTSExportPool:
         on_item=None,
         on_status=None,
     ) -> list[dict]:
+        # Anchored design voices become clones, so they can use both lanes.
+        if hasattr(self.primary, "anchor_items"):
+            items = self.primary.anchor_items(items)
         if not self.can_parallelize(items):
             return self.primary.generate_many(
                 items,

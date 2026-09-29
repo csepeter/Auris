@@ -296,6 +296,60 @@ def pause_after_segment(segment: dict, next_segment: dict | None = None) -> floa
     return DEFAULT_SEGMENT_PAUSE_SEC
 
 
+def _export_workers() -> int:
+    """Parallel FFmpeg chapter jobs; each already uses several threads."""
+    return max(1, min(4, (os.cpu_count() or 2) // 2))
+
+
+def _write_merged_wav(segments: list[dict], path: str) -> float:
+    """Stream segment audio and pauses into one 16-bit WAV; return seconds.
+
+    Equivalent to ``_merge_wavs`` without holding the chapter in memory.
+    """
+    playable = [
+        seg
+        for seg in segments
+        if seg.get('audio_path') and os.path.exists(seg['audio_path'])
+    ]
+    frames = 0
+    with sf.SoundFile(path, 'w', samplerate=SAMPLE_RATE, channels=1,
+                      format='RF64', subtype='PCM_16') as out:
+        if not playable:
+            out.write(np.zeros(SAMPLE_RATE, dtype='float32'))
+            return 1.0
+        for idx, seg in enumerate(playable):
+            with sf.SoundFile(seg['audio_path']) as source:
+                for block in source.blocks(blocksize=65536, dtype='float32', always_2d=True):
+                    out.write(block.mean(axis=1))
+                    frames += len(block)
+            if idx + 1 < len(playable) or seg.get('pause_ms') is not None:
+                pause = pause_after_segment(
+                    seg, playable[idx + 1] if idx + 1 < len(playable) else None
+                )
+                silence = int(SAMPLE_RATE * pause)
+                if silence:
+                    out.write(np.zeros(silence, dtype='float32'))
+                    frames += silence
+    return frames / SAMPLE_RATE
+
+
+def _wav_to_mp3_file(wav_path: str, mp3_path: str, tags: dict[str, str] | None = None) -> bool:
+    """Encode with FFmpeg directly (streaming, no in-memory copy)."""
+    if not _ffmpeg_available():
+        return False
+    command = ['ffmpeg', '-hide_banner', '-nostats', '-y', '-i', wav_path,
+               '-codec:a', 'libmp3lame', '-b:a', '192k', '-id3v2_version', '3']
+    for key, value in (tags or {}).items():
+        if str(value).strip():
+            command += ['-metadata', f'{key}={value}']
+    command.append(mp3_path)
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0 or not os.path.isfile(mp3_path):
+        log.warning('FFmpeg MP3 encoding failed: %s', (result.stderr or '')[-400:])
+        return False
+    return True
+
+
 def _merge_wavs(segments: list[dict]) -> np.ndarray:
     arrays = []
     playable = [
@@ -355,14 +409,13 @@ def export_single_chapter(
     os.makedirs(output_dir, exist_ok=True)
     safe_title = _safe_name(file_stem or chapter_title)
     timeline = build_timeline(segments)
-    merged = _merge_wavs(timeline)
 
     wav_path = os.path.join(output_dir, f'{safe_title}.wav')
     mastering_applied = False
     mastering_warning = None
     if mastering:
         raw_wav_path = os.path.join(output_dir, f'.{safe_title}.premaster.wav')
-        sf.write(raw_wav_path, merged, SAMPLE_RATE)
+        _write_merged_wav(timeline, raw_wav_path)
         try:
             mastering_applied, mastering_warning = _master_wav(
                 raw_wav_path,
@@ -376,26 +429,30 @@ def export_single_chapter(
             if os.path.exists(raw_wav_path):
                 os.remove(raw_wav_path)
     else:
-        sf.write(wav_path, merged, SAMPLE_RATE)
+        _write_merged_wav(timeline, wav_path)
 
     out_audio = wav_path
     actual_fmt = 'wav'
     if audio_fmt == 'mp3':
-        mp3 = _wav_to_mp3_bytes(
-            wav_path,
-            tags={
-                'title': chapter_title,
-                'artist': book_author,
-                'album': book_title,
-                'track': str(track_number) if track_number is not None else '',
-            },
-        )
-        if mp3:
-            out_audio = wav_path.replace('.wav', '.mp3')
-            with open(out_audio, 'wb') as f:
-                f.write(mp3)
+        tags = {
+            'title': chapter_title,
+            'artist': book_author,
+            'album': book_title,
+            'track': str(track_number) if track_number is not None else '',
+        }
+        mp3_path = wav_path[:-4] + '.mp3'
+        if _wav_to_mp3_file(wav_path, mp3_path, tags):
+            out_audio = mp3_path
             actual_fmt = 'mp3'
             os.remove(wav_path)
+        else:
+            mp3 = _wav_to_mp3_bytes(wav_path, tags=tags)
+            if mp3:
+                out_audio = mp3_path
+                with open(out_audio, 'wb') as f:
+                    f.write(mp3)
+                actual_fmt = 'mp3'
+                os.remove(wav_path)
 
     sub_path = None
     sub_ext = 'none'
@@ -478,13 +535,13 @@ def export_chapter_folder(
         default=len(chapters_data),
     )
     number_width = max(2, len(str(max_number)))
-    files = []
 
-    for fallback_number, chapter in enumerate(chapters_data, 1):
+    def render(item):
+        fallback_number, chapter = item
         number = int(chapter.get('chapter_number') or fallback_number)
         title = chapter['chapter_title']
         stem = f'{number:0{number_width}d}_{_safe_name(title)}'
-        files.append(export_single_chapter(
+        return export_single_chapter(
             title,
             book_title,
             chapter['segments'],
@@ -496,7 +553,18 @@ def export_chapter_folder(
             mastering=mastering,
             book_author=book_author,
             track_number=number,
-        ))
+        )
+
+    # Mastering and encoding run in FFmpeg processes; chapters are independent.
+    from concurrent.futures import ThreadPoolExecutor
+
+    items = list(enumerate(chapters_data, 1))
+    workers = min(_export_workers(), len(items)) or 1
+    if workers == 1:
+        files = [render(item) for item in items]
+    else:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='chapter-export') as pool:
+            files = list(pool.map(render, items))
 
     return {'directory_path': output_dir, 'chapters': files}
 

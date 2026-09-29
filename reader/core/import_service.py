@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlsplit
 
 from core.parser import docx_parser, epub_parser, pdf_parser, prc_parser, txt_parser
 from core.parser.language import detect_language
+from core.text_cleanup import clean_parsed_book
 from core.parser.structure import attach_blocks
 
 
@@ -49,7 +50,7 @@ def _ensure_readable_chapters(result: dict, *, web: bool = False) -> dict:
             "PDF, engedélyezd az OCR szövegfelismerést, majd válaszd ki újra a fájlt."
         )
     result["chapters"] = attach_blocks(readable)
-    return result
+    return clean_parsed_book(result)
 
 
 def prepare_file(path, *, ocr=False, ocr_language='hun', calibre=False) -> dict:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import OrderedDict
 import sys
 import threading
 import traceback
@@ -171,14 +172,18 @@ def main() -> None:
             kwargs = dict(request["generation"])
             ref_path = request.get("reference_audio")
             if ref_path:
-                audio, sr = sf.read(ref_path, always_2d=False)
-                kwargs.update(
-                    {
-                        "reference_audio": torch.from_numpy(reference_array(audio)),
-                        "reference_sample_rate": int(sr),
-                        "reference_text": request.get("reference_text") or None,
-                    }
-                )
+                codes = reference_codes(model, ref_path, request.get("reference_key"))
+                if codes is not None:
+                    kwargs["reference_codes"] = codes
+                else:
+                    audio, sr = sf.read(ref_path, always_2d=False)
+                    kwargs.update(
+                        {
+                            "reference_audio": torch.from_numpy(reference_array(audio)),
+                            "reference_sample_rate": int(sr),
+                        }
+                    )
+                kwargs["reference_text"] = request.get("reference_text") or None
             # Match the known-good direct_speech() path. Cancellation is handled
             # by terminating this isolated process from the parent.
             output = model.generate_speech(
@@ -203,6 +208,38 @@ def main() -> None:
                     "traceback": traceback.format_exc(),
                 }
             )
+
+
+_REFERENCE_CODES: "OrderedDict[str, object]" = OrderedDict()
+_REFERENCE_CODES_LIMIT = 16
+
+
+def reference_codes(model, ref_path, key=None):
+    """Encode a reference once per voice; later utterances reuse the codes.
+
+    Every Higgs utterance otherwise re-reads and re-encodes the same clip
+    through the audio codec before generation starts.
+    """
+    encode = getattr(model, "_encode_reference", None)
+    if encode is None:
+        return None
+    try:
+        st = os.stat(ref_path)
+    except OSError:
+        return None
+    cache_key = key or f"{os.path.abspath(ref_path)}|{st.st_mtime_ns}|{st.st_size}"
+    cached = _REFERENCE_CODES.get(cache_key)
+    if cached is not None:
+        _REFERENCE_CODES.move_to_end(cache_key)
+        return cached
+    import torch
+
+    audio, sr = sf.read(ref_path, always_2d=False)
+    codes = encode(torch.from_numpy(reference_array(audio)), int(sr)).cpu()
+    _REFERENCE_CODES[cache_key] = codes
+    while len(_REFERENCE_CODES) > _REFERENCE_CODES_LIMIT:
+        _REFERENCE_CODES.popitem(last=False)
+    return codes
 
 
 if __name__ == "__main__":

@@ -41,9 +41,12 @@ class ExperienceTest(unittest.TestCase):
         e.save_rule(None, "Gorcsev", "Gorcsef")
         e.save_rule(1, "Gorcsev", "Gorcseff")
         e.save_rule(None, "Gorcseff", "más")
+        # Hungarian suffixes follow the rule; other endings are left alone.
         self.assertEqual(
-            e.apply_pronunciation("Gorcsev és Gorcsevék.", 1), "Gorcseff és Gorcsevék."
+            e.apply_pronunciation("Gorcsev és Gorcsevék, Gorcsevics.", 1),
+            "Gorcseff és Gorcseffék, Gorcsevics.",
         )
+        self.assertEqual(e.apply_pronunciation("Gorcsevvel.", 1), "Gorcseffvel.")
         self.assertEqual(e.apply_pronunciation("Gorcsev.", 2), "Gorcsef.")
 
     def test_rule_change_invalidates_only_affected_book(self):

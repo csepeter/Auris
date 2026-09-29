@@ -40,12 +40,22 @@ def migrate_legacy_annotations(conn, chapter_ids=None):
         for row in rows:
             old_index = row['unit_index']
             candidates = [u['index'] for u in units if u['index'] > cursor and u['text'] == row['unit_text']]
+            if not candidates and row['unit_text']:
+                # A splitter change may merge the old unit into a longer one
+                # ("IV." + "Béla király volt."): accept a unique container.
+                old_text = ' '.join(str(row['unit_text']).split())
+                candidates = [
+                    u['index'] for u in units
+                    if u['index'] > cursor and old_text and old_text in ' '.join(u['text'].split())
+                ]
             if old_index in candidates:
                 index = old_index
             elif len(candidates) == 1:
                 index = candidates[0]
             else:
                 continue  # Do not silently assign an ambiguous different passage.
+            if kept and kept[-1][0] == index:
+                continue  # Two old units merged into one: keep the first speaker.
             kept.append((index, row))
             cursor = index
         conn.execute('DELETE FROM speaker_annotations WHERE chapter_id=?', (chapter['id'],))

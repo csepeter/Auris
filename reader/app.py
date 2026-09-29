@@ -154,8 +154,17 @@ def _close_orphaned_job(job_id: str | None) -> None:
         log.exception('Unable to close orphaned job %s', job_id)
 
 
-def _check_job_cancelled(job: dict | None) -> None:
-    if job is not None and jobs.is_cancel_requested(job['job_id']):
+def _check_job_cancelled(job: dict | None, *, throttle: bool = False) -> None:
+    if job is None:
+        return
+    if throttle:
+        import time
+
+        now = time.monotonic()
+        if now - float(job.get('_cancel_checked_at') or 0) < 0.3:
+            return
+        job['_cancel_checked_at'] = now
+    if jobs.is_cancel_requested(job['job_id']):
         raise JobCancelled('Cancellation requested')
 
 
@@ -297,7 +306,16 @@ def _startup():
             segment_boundary_policy_changed = (
                 app_settings.migrate_tts_segment_boundary_policy_version()
             )
-            if expression_policy_changed or segment_boundary_policy_changed:
+            render_policy_changed = app_settings.migrate_tts_render_policy_version()
+            if int(app_settings.get('speaker_segmenter_version', 1) or 1) != enrichment.SEGMENTER_VERSION:
+                # Unit numbering changed: move saved speakers to the same text.
+                with get_conn() as conn:
+                    text_editor.migrate_legacy_annotations(conn)
+                app_settings.save({'speaker_segmenter_version': enrichment.SEGMENTER_VERSION})
+            if (
+                expression_policy_changed or segment_boundary_policy_changed
+                or render_policy_changed
+            ):
                 with get_conn() as conn:
                     conn.execute('DELETE FROM tts_segments')
         except Exception:
@@ -846,6 +864,10 @@ def import_book():
         _delete_file_if_exists(dest)
         return jsonify({'error': f'Parse error: {e}'}), 500
 
+    from core.parser.structure import attach_blocks
+    from core.text_cleanup import clean_parsed_book
+    data['chapters'] = attach_blocks(data.get('chapters') or [])
+    clean_parsed_book(data)
     parsed_chapters = data.get('chapters') or []
     if not any(str(chapter.get('content') or '').strip() for chapter in parsed_chapters):
         _delete_file_if_exists(dest)
@@ -953,7 +975,9 @@ def _detect_characters(
         try:
             _check_job_cancelled(analysis_job)
             full_text = ' '.join(ch['content'] for ch in data['chapters'])
-            chars = char_module.extract_characters(full_text, top_n=20)
+            chars = char_module.extract_characters(
+                full_text, top_n=20, language=data.get('language')
+            )
             _store_character_analysis(
                 book_id, chars, [], 'complete', 'Legacy detection complete.'
             )
@@ -2622,7 +2646,13 @@ def _bump_export_progress(job: dict | None, n: int = 1, *, synthesized: bool = F
         job['synth_done'] = int(job.get('synth_done') or 0) + n
     _refresh_export_job_fields(job)
     if job.get('job_id'):
-        _persist_job(job)
+        # SQLite progress rows are for other pages and restarts; writing one
+        # per segment costs several connections per sentence during export.
+        last = float(job.get('_persisted_at') or 0)
+        finished = int(job.get('total') or 0) and job['done'] >= int(job.get('total') or 0)
+        if finished or now - last >= 0.5:
+            job['_persisted_at'] = now
+            _persist_job(job)
 
 
 def _ensure_audio_for_chapter(
@@ -2732,7 +2762,7 @@ def _ensure_audio_for_chapter(
                 synthesized=not bool(result.get('cache_hit')),
             )
             _flush_db(force=False)
-            _check_job_cancelled(job)
+            _check_job_cancelled(job, throttle=True)
 
     try:
         def on_item(local_i: int, result: dict) -> None:
@@ -3200,15 +3230,21 @@ def _run_chapterwise_export(
         job['done'] = 0
         job['message'] = f'Hang készítése (0/{total})'
         export_pool = _start_export_pool(job)
-        for ch_data in chapters_data:
-            _check_job_cancelled(job)
-            _ensure_audio_for_chapter(
-                book_id,
-                ch_data['ch_id'],
-                ch_data['segments'],
-                job,
-                export_pool=export_pool,
-            )
+        # One synthesis pass for all selected chapters: voice groups and
+        # length-sorted GPU packs span chapter boundaries, so packs stay full
+        # instead of every chapter ending with a half-empty batch. Segment
+        # dicts are shared, so results land in each chapter's list.
+        all_segments = [
+            seg for ch_data in chapters_data for seg in ch_data['segments']
+        ]
+        _check_job_cancelled(job)
+        _ensure_audio_for_chapter(
+            book_id,
+            chapters_data[0]['ch_id'] if chapters_data else 0,
+            all_segments,
+            job,
+            export_pool=export_pool,
+        )
         _check_job_cancelled(job)
         mastering = bool(app_settings.get('audio_mastering', True))
         job['message'] = (
@@ -3485,7 +3521,7 @@ def save_settings():
         'narrator_instruct', 'single_narrator_mode', 'default_speed', 'audio_format',
         'subtitle_format', 'theme', 'font_size', 'font_family', 'line_height',
         'normalize_text', 'tts_num_step', 'tts_batch_size', 'tts_coalesce_chars',
-        'audio_mastering',
+        'audio_mastering', 'voice_design_anchor',
         'tts_accel', 'tts_export_workers',
         'character_detection_mode', 'llm_provider',
         'llm_base_url', 'llm_api_key', 'llm_model',
@@ -3558,6 +3594,8 @@ def save_settings():
         updates['normalize_text'] = bool(updates['normalize_text'])
     if 'audio_mastering' in updates:
         updates['audio_mastering'] = bool(updates['audio_mastering'])
+    if 'voice_design_anchor' in updates:
+        updates['voice_design_anchor'] = bool(updates['voice_design_anchor'])
     if 'tts_num_step' in updates:
         try:
             step = int(updates['tts_num_step'])
@@ -3612,6 +3650,7 @@ def save_settings():
     omnivoice_audio_keys = {
         'tts_num_step',
         'normalize_text',
+        'voice_design_anchor',
     }
     if any(
         key in updates and updates[key] != previous.get(key)
@@ -3672,18 +3711,20 @@ def llm_test():
 @app.route('/api/settings/spacy-status')
 def spacy_status_route():
     status = app_settings.spacy_status()
-    status['error'] = char_module.spacy_error()
+    # Only report load errors for an installed model; a missing optional
+    # English model is already explained by the status itself.
+    status['error'] = char_module.spacy_error() if status.get('model_installed') else ''
     return jsonify(status)
 
 
 @app.route('/api/settings/spacy-install', methods=['POST'])
 def spacy_install():
-    result = app_settings.install_spacy_model()
+    body = request.get_json(silent=True) or {}
+    language = 'hu' if str(body.get('language') or '').startswith('hu') else 'en'
+    result = app_settings.install_spacy_model(language)
     if result['ok']:
         # Reset spaCy NLP so it reloads the new model
-        import core.characters as cm
-        cm._nlp = None
-        cm._spacy_error = ''
+        char_module.reset_nlp_cache()
     return jsonify(result)
 
 

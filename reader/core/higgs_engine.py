@@ -25,7 +25,14 @@ from typing import Any
 import numpy as np
 import soundfile as sf
 
-from core.tts_engine import AUDIO_CACHE_DIR, SAMPLE_RATE, _write_audio_atomic, apply_text_normalization
+from core.tts_engine import (
+    AUDIO_CACHE_DIR,
+    SAMPLE_RATE,
+    _audio_duration,
+    _write_audio_atomic,
+    apply_text_normalization,
+    hungarian_normalizer_key,
+)
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +158,7 @@ class HiggsTTSEngine:
         self._cancel_load = threading.Event()
         self._load_start_lock = threading.Lock()
         self._load_mutex = threading.Lock()
+        self._reference_files: dict[str, str] = {}
         self._error: str | None = None
         self._resolved_model = ""
         self._worker: subprocess.Popen | None = None
@@ -377,7 +385,7 @@ class HiggsTTSEngine:
             "temperature": float(_setting("higgs_temperature", 0.8)),
             "top_p": top_p if top_p > 0 else None,
             "top_k": top_k if top_k > 0 else None,
-            "max_new_tokens": int(_setting("higgs_max_new_tokens", 1024)),
+            "max_new_tokens": int(_setting("higgs_max_new_tokens", 2048)),
             "seed": int(_setting("higgs_seed", -1)),
         }
 
@@ -404,6 +412,7 @@ class HiggsTTSEngine:
             f"higgs-v{HIGGS_CACHE_VERSION}|{text}|{instruct}|{ref_audio}|{ref_text}|{speed:.3f}|"
             f"{language or ''}|nt={int(bool(normalize_text))}|{controls}|{generation}"
         )
+        payload += hungarian_normalizer_key(text, language, bool(normalize_text))
         return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -468,6 +477,34 @@ class HiggsTTSEngine:
                 return response
             log.info("Higgs worker: %s", line.rstrip())
 
+    def _prepared_reference(self, ref_audio: str) -> tuple[str, str]:
+        """Return a stable, preprocessed reference file and its identity key.
+
+        The processed clip is kept in the audio cache, so the worker can reuse
+        the codec encoding of the same voice for every utterance.
+        """
+        if not os.path.exists(ref_audio):
+            raise FileNotFoundError(f"Reference audio not found: {ref_audio}")
+        st = os.stat(ref_audio)
+        key = hashlib.md5(
+            f"{os.path.abspath(ref_audio)}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8")
+        ).hexdigest()
+        cached = self._reference_files.get(key)
+        if cached and os.path.exists(cached):
+            return cached, key
+        audio, sr = sf.read(ref_audio, always_2d=False)
+        processed = _prepare_reference(audio, int(sr))
+        if len(processed) == len(np.asarray(audio).squeeze()):
+            path = ref_audio
+        else:
+            folder = os.path.join(AUDIO_CACHE_DIR, "higgs_refs")
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(folder, f"{key}.wav")
+            if not os.path.exists(path):
+                _write_audio_atomic(path, processed, int(sr))
+        self._reference_files[key] = path
+        return path, key
+
     def _synthesize(
         self,
         text: str,
@@ -483,15 +520,9 @@ class HiggsTTSEngine:
         settings = self._generation_settings()
         seed = settings.pop("seed")
         reference_path = ref_audio
+        reference_key = None
         if ref_audio:
-            if not os.path.exists(ref_audio):
-                raise FileNotFoundError(f"Reference audio not found: {ref_audio}")
-            audio, sr = sf.read(ref_audio, always_2d=False)
-            processed = _prepare_reference(audio, int(sr))
-            if len(processed) != len(np.asarray(audio).squeeze()):
-                handle, reference_path = tempfile.mkstemp(suffix=".wav", prefix="auris-higgs-ref-")
-                os.close(handle)
-                sf.write(reference_path, processed, int(sr))
+            reference_path, reference_key = self._prepared_reference(ref_audio)
         prompt = self._prompt(text, instruct, speed, language, normalize_text)
         handle, output_path = tempfile.mkstemp(suffix=".wav", prefix="auris-higgs-out-")
         os.close(handle)
@@ -506,6 +537,7 @@ class HiggsTTSEngine:
                             "generation": settings,
                             "seed": seed,
                             "reference_audio": reference_path,
+                            "reference_key": reference_key,
                             "reference_text": str(ref_text or "").strip() or None,
                             "output_path": output_path,
                         }
@@ -517,7 +549,7 @@ class HiggsTTSEngine:
             audio, _ = sf.read(output_path, dtype="float32")
             return np.asarray(audio, dtype=np.float32)
         finally:
-            for path in (output_path, reference_path if reference_path != ref_audio else None):
+            for path in (output_path,):
                 if path:
                     try:
                         os.remove(path)
@@ -548,10 +580,10 @@ class HiggsTTSEngine:
         )
         path = self.cache_path(key)
         if os.path.exists(path):
-            data, sr = sf.read(path)
+            duration = _audio_duration(path)
             return {
                 "audio_path": path,
-                "duration_sec": len(data) / sr,
+                "duration_sec": duration,
                 "cache_hit": True,
                 "cache_key": key,
             }

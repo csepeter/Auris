@@ -22,7 +22,10 @@ _settings_write_lock = threading.RLock()
 _DEFAULT_MODEL_PATH = str(_REPO_ROOT / 'model_backup' / 'OmniVoice')
 _DEFAULT_HIGGS_MODEL_PATH = str(_REPO_ROOT / 'model_backup' / 'Higgs-TTS-3-4B')
 LEGACY_NARRATOR_INSTRUCT = 'female, middle-aged, moderate pitch, american accent'
-DEFAULT_NARRATOR_INSTRUCT = 'male, elderly, low pitch, british accent'
+# Foreign accents in the voice description pull Hungarian stress and vowels
+# towards English, so the default narrator carries no accent.
+PREVIOUS_NARRATOR_INSTRUCT = 'male, elderly, low pitch, british accent'
+DEFAULT_NARRATOR_INSTRUCT = 'male, middle-aged, low pitch'
 TTS_EXPRESSION_POLICY_VERSION = 2
 TTS_SEGMENT_BOUNDARY_POLICY_VERSION = 2
 
@@ -43,7 +46,9 @@ DEFAULTS: dict = {
     'higgs_temperature': 0.8,
     'higgs_top_p': 0.95,
     'higgs_top_k': 50,
-    'higgs_max_new_tokens': 1024,
+    # ~25 audio frames per second: 2048 leaves room for a 500-character
+    # segment read slowly (1024 could cut off after ~41 s).
+    'higgs_max_new_tokens': 2048,
     'higgs_seed': -1,
     # raw = match the reference Gradio app (plain text, no automatic controls)
     # expressive = apply Auris normalization, scene speed and expression tags
@@ -115,6 +120,8 @@ DEFAULTS: dict = {
     'subtitle_format': 'ass',
     # Conservative FFmpeg EQ/compression + two-pass chapter loudness matching.
     'audio_mastering': True,
+    # Render voice descriptions once into an anchor clip, then clone it.
+    'voice_design_anchor': True,
 
     # UI
     'theme': 'night',
@@ -131,7 +138,9 @@ _load_cache_lock = threading.Lock()
 def _normalize_loaded(saved: dict) -> dict:
     merged = {**DEFAULTS, **saved}
     narrator_instruct = str(merged.get('narrator_instruct') or '').strip().lower()
-    if narrator_instruct in {'', LEGACY_NARRATOR_INSTRUCT.lower()}:
+    if narrator_instruct in {
+        '', LEGACY_NARRATOR_INSTRUCT.lower(), PREVIOUS_NARRATOR_INSTRUCT.lower(),
+    }:
         merged['narrator_instruct'] = DEFAULT_NARRATOR_INSTRUCT
     return merged
 
@@ -255,39 +264,107 @@ def migrate_tts_segment_boundary_policy_version() -> bool:
     return True
 
 
+# Bumped when a release changes how existing segment audio must be rendered
+# (voice anchoring, Hungarian normalization). Clone voices re-hit the WAV
+# cache; only audio whose identity changed is synthesized again.
+TTS_RENDER_POLICY_VERSION = 1
+
+
+def current_tts_render_policy() -> str:
+    from core import hungarian_numbers
+    from core.tts_engine import VOICE_DESIGN_ANCHOR_VERSION
+
+    return (
+        f"r{TTS_RENDER_POLICY_VERSION}"
+        f"-n{getattr(hungarian_numbers, 'NORMALIZER_VERSION', 1)}"
+        f"-a{VOICE_DESIGN_ANCHOR_VERSION}"
+    )
+
+
+def migrate_tts_render_policy_version() -> bool:
+    """Record the render policy; True when segment rows must be rebuilt."""
+    policy = current_tts_render_policy()
+    if str(load().get('tts_render_policy', '')) == policy:
+        return False
+    save({'tts_render_policy': policy})
+    return True
+
+
 def get(key: str, default=None):
     return load().get(key, default)
 
 
 # ── spaCy status ──────────────────────────────────────────────────────────────
 
+HUNGARIAN_SPACY_MODEL = 'hu_core_news_md'
+HUNGARIAN_SPACY_VERSION = '3.8.1'
+HUNGARIAN_SPACY_URL = (
+    'https://huggingface.co/huspacy/hu_core_news_md/resolve/main/'
+    'hu_core_news_md-any-py3-none-any.whl'
+)
+
+
+def _spacy_package_installed(name: str) -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec(name) is not None
+
+
 def spacy_status() -> dict:
-    """Returns {'installed': bool, 'model_installed': bool, 'model': str}"""
+    """Returns spaCy availability for English and Hungarian (HuSpaCy) models."""
     try:
-        import spacy
+        import spacy  # noqa: F401
         spacy_ok = True
     except ImportError:
-        return {'installed': False, 'model_installed': False, 'model': 'en_core_web_sm'}
-
-    try:
-        spacy.load('en_core_web_sm')
-        model_ok = True
-    except OSError:
-        model_ok = False
-
-    return {'installed': spacy_ok, 'model_installed': model_ok, 'model': 'en_core_web_sm'}
-
-
-def install_spacy_model() -> dict:
-    """Run 'python -m spacy download en_core_web_sm' as a subprocess."""
-    import subprocess
-    python = sys.executable
-    result = subprocess.run(
-        [python, '-m', 'spacy', 'download', 'en_core_web_sm'],
-        capture_output=True, text=True
+        return {
+            'installed': False, 'model_installed': False, 'model': 'en_core_web_sm',
+            'hu_model_installed': False, 'hu_model': HUNGARIAN_SPACY_MODEL,
+        }
+    hu_installed = next(
+        (m for m in ('hu_core_news_lg', 'hu_core_news_md', 'hu_core_news_trf')
+         if _spacy_package_installed(m)),
+        None,
     )
+    return {
+        'installed': spacy_ok,
+        'model_installed': _spacy_package_installed('en_core_web_sm'),
+        'model': 'en_core_web_sm',
+        'hu_model_installed': bool(hu_installed),
+        'hu_model': hu_installed or HUNGARIAN_SPACY_MODEL,
+    }
+
+
+def install_spacy_model(language: str = 'en') -> dict:
+    """Install the English spaCy model or the Hungarian HuSpaCy model."""
+    import subprocess
+    import tempfile
+    import urllib.request
+
+    python = sys.executable
+    if language != 'hu':
+        result = subprocess.run(
+            [python, '-m', 'spacy', 'download', 'en_core_web_sm'],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            return {'ok': True, 'message': 'en_core_web_sm installed successfully.'}
+        return {'ok': False, 'message': result.stderr or result.stdout}
+    # HuSpaCy publishes a wheel whose file name lacks a version; current pip
+    # rejects it, so download it under a valid PEP 427 name first.
+    with tempfile.TemporaryDirectory(prefix='auris-huspacy-') as folder:
+        wheel = Path(folder) / (
+            f'{HUNGARIAN_SPACY_MODEL}-{HUNGARIAN_SPACY_VERSION}-py3-none-any.whl'
+        )
+        try:
+            urllib.request.urlretrieve(HUNGARIAN_SPACY_URL, wheel)
+        except Exception as exc:
+            return {'ok': False, 'message': f'A HuSpaCy letöltése nem sikerült: {exc}'}
+        result = subprocess.run(
+            [python, '-m', 'pip', 'install', str(wheel)],
+            capture_output=True, text=True,
+        )
     if result.returncode == 0:
-        return {'ok': True, 'message': 'en_core_web_sm installed successfully.'}
+        return {'ok': True, 'message': f'{HUNGARIAN_SPACY_MODEL} telepítve.'}
     return {'ok': False, 'message': result.stderr or result.stdout}
 
 

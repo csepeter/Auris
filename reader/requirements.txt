@@ -57,3 +57,4 @@ spacy>=3.7               # NLP / character detection
 # OR use the Settings page in the app to install it with one click.
 
 trafilatura>=2.2,<3      # Web article text and metadata extraction
+pyphen>=0.15            # Hungarian hyphenation: PDF line-break vs compound hyphen

@@ -395,6 +395,32 @@ def install_spacy_model():
         warn("Install it later from Settings or with: python -m spacy download en_core_web_sm")
 
 
+def install_hungarian_spacy_model():
+    """HuSpaCy powers Hungarian character detection without a language model."""
+    step("Installing Hungarian spaCy model (HuSpaCy hu_core_news_md)")
+    if STRICT_OFFLINE:
+        warn("Strict offline mode enabled. Install HuSpaCy later from Settings.")
+        return
+    import importlib.util
+
+    if any(importlib.util.find_spec(name) for name in
+           ("hu_core_news_lg", "hu_core_news_md", "hu_core_news_trf")):
+        ok("HuSpaCy already installed")
+        return
+    try:
+        sys.path.insert(0, str(APP_DIR))
+        from core.settings import install_spacy_model as install_model
+
+        result = install_model("hu")
+    except Exception as exc:  # network or import failure must not stop setup
+        result = {"ok": False, "message": str(exc)}
+    if result.get("ok"):
+        ok("HuSpaCy installed")
+    else:
+        warn("Could not install HuSpaCy during setup: " + str(result.get("message", ""))[-300:])
+        warn("Install it later from Settings -> Character detection.")
+
+
 def print_summary(hw_tag):
     device_label = {
         "rocm": "AMD GPU (ROCm)",
@@ -458,6 +484,7 @@ def main():
     install_higgs_transformers_runtime()
     install_reader_deps()
     install_spacy_model()
+    install_hungarian_spacy_model()
     verify_torch(hw_tag)
     print_summary(hw_tag)
 

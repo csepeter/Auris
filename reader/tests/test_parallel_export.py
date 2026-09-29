@@ -146,7 +146,8 @@ class CancellationPropagationTest(unittest.TestCase):
 
         engine = tts_engine.TTSEngine()
         with tempfile.TemporaryDirectory() as tmp, \
-                patch.object(tts_engine, "AUDIO_CACHE_DIR", tmp):
+                patch.object(tts_engine, "AUDIO_CACHE_DIR", tmp), \
+                patch.object(tts_engine, "_voice_design_anchor_enabled", return_value=False):
             items = [{"text": f"Mondat {i}.", "instruct": "x"} for i in range(3)]
             for item in items:
                 key = engine.cache_key(item["text"], tts_engine._stabilize_voice_design_instruct("x"),
@@ -160,3 +161,41 @@ class CancellationPropagationTest(unittest.TestCase):
 
             with self.assertRaises(GenerationAborted):
                 engine.generate_many(items, num_step=16, on_item=on_item)
+
+
+class VoiceDesignAnchorTest(unittest.TestCase):
+    def test_design_voice_is_anchored_once_and_cloned(self):
+        import tempfile
+        from unittest.mock import patch
+
+        import numpy as np
+
+        from core import tts_engine
+
+        engine = tts_engine.TTSEngine()
+        calls = []
+
+        def fake_batch(texts, instruct=None, ref_audio=None, **kw):
+            calls.append((tuple(texts), instruct, ref_audio, kw.get("language")))
+            rng = np.random.default_rng(len(calls))
+            return [rng.standard_normal(2400).astype("float32") * 0.1 for _ in texts]
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(tts_engine, "AUDIO_CACHE_DIR", tmp), \
+                patch.object(tts_engine, "VOICE_REF_DIR", tmp), \
+                patch.object(tts_engine, "_voice_design_anchor_enabled", return_value=True), \
+                patch.object(engine, "_synthesize_batch", side_effect=fake_batch):
+            items = [
+                {"text": f"Ez a {i}. mondat.", "instruct": "female, middle-aged", "language": "hu"}
+                for i in range(3)
+            ]
+            results = engine.generate_many(items, num_step=16)
+            anchored = engine.anchor_items(items)
+
+        # First call renders the Hungarian anchor sentence with the description.
+        self.assertIn("Jó napot kívánok", calls[0][0][0])
+        self.assertEqual(calls[0][1], "female, middle-aged")
+        # Segments are then cloned from the anchor clip, not designed again.
+        self.assertTrue(all(call[1] is None and call[2] for call in calls[1:]))
+        self.assertEqual(len(results), 3)
+        self.assertTrue(all(item["ref_audio"] and item["instruct"] is None for item in anchored))
