@@ -12,6 +12,28 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-09-29
+
+### Magyar
+
+#### Javítva
+
+- **Higgs hangklónozás referenciahanggal**: a 3.5.0 óta a referencia kódjainak gyorsítótárazása hiányzó import miatt hibával leállt, így a Higgs referenciahangos generálása nem működött. Javítva, és valódi modellel ellenőrizve.
+
+#### Változott
+
+- Az `app.py` tovább bomlott: a szereplő- és narrátorhangok (`core/voices_api.py`), valamint az olvasás, szerkesztés, haladás és könyvjelzők (`core/reading_api.py`) külön modulba kerültek. A felesleges importok és a megszűnt összevonási beállítás naplózása kikerült.
+
+### English
+
+#### Fixed
+
+- **Higgs voice cloning with a reference**: since 3.5.0 the reference-code cache failed on a missing import, so Higgs generation with reference audio did not work. Fixed and verified with the real model.
+
+#### Changed
+
+- `app.py` was split further: character and narrator voices (`core/voices_api.py`) and reading, editing, progress and bookmarks (`core/reading_api.py`) are separate modules. Unused imports and logging of the removed coalescing setting were dropped.
+
 ## [4.2.0] - 2026-09-29
 
 ### Magyar

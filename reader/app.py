@@ -7,7 +7,6 @@ from pathlib import Path
 import json
 import logging
 import os
-import shutil
 import threading
 import uuid
 import sys
@@ -99,16 +98,16 @@ _INTERACTIVE_BUSY_MESSAGE = (
     'Interaktív hangkészítés fut. Próbáld újra, amikor befejeződött.'
 )
 _INTERACTIVE_ENDPOINTS = {
-    'preview_character', 'preview_narrator', 'preview_chapter_text',
+    'voices.preview_character', 'voices.preview_narrator', 'reading.preview_chapter_text',
 }
 _GATED_MUTATION_ENDPOINTS = {
-    'import_book', 'delete_book', 'update_speaker_annotation', 'save_chapter_text', 'restore_chapter_text',
-    'upload_ref_audio',
-    'delete_ref_audio', 'upload_narrator_ref_audio',
-    'delete_narrator_ref_audio', 'settings_api.save_settings', 'tts_load', 'settings_api.tts_reload',
+    'import_book', 'delete_book', 'reading.update_speaker_annotation', 'reading.save_chapter_text',
+    'reading.restore_chapter_text', 'voices.upload_ref_audio',
+    'voices.delete_ref_audio', 'voices.upload_narrator_ref_audio',
+    'voices.delete_narrator_ref_audio', 'settings_api.save_settings', 'tts_load', 'settings_api.tts_reload',
 }
-_VOICE_MUTATION_ENDPOINTS = {'update_character', 'update_narrator'}
-_CONSISTENT_READ_ENDPOINTS = {'get_chapter_editor', 'get_chapter', 'get_segments', 'tts_generate'}
+_VOICE_MUTATION_ENDPOINTS = {'voices.update_character', 'voices.update_narrator'}
+_CONSISTENT_READ_ENDPOINTS = {'reading.get_chapter_editor', 'reading.get_chapter', 'get_segments', 'tts_generate'}
 
 
 class JobCancelled(GenerationAborted, RuntimeError):
@@ -1658,14 +1657,6 @@ def _engine_supports_speed() -> bool:
     return bool(ENGINE_INFO.get(engine, {}).get('speed', True))
 
 
-@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>/editor')
-def get_chapter_editor(book_id, chapter_id):
-    with get_conn() as conn:
-        chapter = conn.execute('SELECT * FROM chapters WHERE id=? AND book_id=?',
-                               (chapter_id, book_id)).fetchone()
-    if chapter is None:
-        return jsonify({'error': 'A fejezet nem található.'}), 404
-    return jsonify(_editor_payload(chapter))
 
 
 def _save_editor(book_id, chapter_id, restore=False):
@@ -1755,598 +1746,42 @@ def _save_editor(book_id, chapter_id, restore=False):
         return jsonify({**_editor_payload(result), 'annotations_removed': len(old_annotations) - len(annotations)})
 
 
-@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>/editor', methods=['PUT'])
-def save_chapter_text(book_id, chapter_id):
-    return _save_editor(book_id, chapter_id)
 
 
-@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>/editor/restore', methods=['POST'])
-def restore_chapter_text(book_id, chapter_id):
-    return _save_editor(book_id, chapter_id, restore=True)
 
 
-@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>/editor/preview', methods=['POST'])
-def preview_chapter_text(book_id, chapter_id):
-    with get_conn() as conn:
-        chapter = conn.execute('SELECT id FROM chapters WHERE id=? AND book_id=?', (chapter_id, book_id)).fetchone()
-    if not chapter:
-        return jsonify({'error': 'A fejezet nem található.'}), 404
-    body = request.get_json(silent=True)
-    try:
-        blocks = text_editor.validate_blocks([body.get('block') if isinstance(body, dict) else None])
-        if len(blocks[0]['text']) > 1500:
-            raise ValueError('Az előnézethez legfeljebb 1500 karakteres blokkot válassz vagy bontsd kisebb részekre.')
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'Az előnézethez előbb töltsd be a hangmodellt a Beállításokban.'}), 503
-    book = dict(_load_book(book_id))
-    segs = text_editor.enrich_blocks(blocks, {}, _book_narrator_instruct(book), True, None)
-    from core import experience
-    ref_audio, ref_text = _book_narrator_reference(book_id)
-    try:
-        for seg in segs:
-            result = tts.generate(
-                text=experience.apply_pronunciation(seg['enriched_text'], book_id),
-                instruct=seg['instruct'], speed=seg['speed'], language=book['language'],
-                ref_audio=ref_audio, ref_text=ref_text)
-            seg['audio_path'] = result['audio_path']
-        # Include the selected trailing pause in the preview so it is audible.
-        import numpy as np
-        import soundfile as sf
-        from core.exporter import _merge_wavs, pause_after_segment, SAMPLE_RATE
-        from core.tts_engine import AUDIO_CACHE_DIR
-        waveform = _merge_wavs(segs)
-        if segs[-1].get('pause_ms') is None:
-            waveform = np.concatenate([waveform, np.zeros(int(SAMPLE_RATE * pause_after_segment(segs[-1])))])
-        key = 'preview_' + uuid.uuid4().hex
-        os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
-        sf.write(os.path.join(AUDIO_CACHE_DIR, key + '.wav'), waveform, SAMPLE_RATE)
-        return jsonify({'audio_url': f'/api/audio/{key}'})
-    except Exception as exc:
-        log.exception('Chapter text preview failed')
-        return jsonify({'error': str(exc)}), 500
 
 
-@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>')
-def get_chapter(book_id, chapter_id):
-    with get_conn() as conn:
-        row = conn.execute(
-            'SELECT * FROM chapters WHERE id=? AND book_id=?', (chapter_id, book_id)
-        ).fetchone()
-    if not row:
-        return jsonify({'error': 'Nem található'}), 404
-    return jsonify(dict(row))
 
 
-@app.route(
-    '/api/books/<int:book_id>/chapters/<int:chapter_id>/speaker-annotations',
-    methods=['PUT'],
-)
-def update_speaker_annotation(book_id, chapter_id):
-    """Persist a human correction for one stable speaker unit."""
-    body = request.get_json(silent=True) or {}
-    try:
-        unit_index = int(body.get('unit_index'))
-    except (TypeError, ValueError):
-        return jsonify({'error': 'A valid unit_index is required'}), 400
-
-    raw_name = body.get('speaker_name')
-    speaker_name = (
-        ' '.join(str(raw_name).strip().split()) if raw_name is not None else ''
-    )
-    if len(speaker_name) > 100:
-        return jsonify({'error': 'A beszélő neve túl hosszú'}), 400
-
-    with get_conn() as conn:
-        chapter = conn.execute(
-            'SELECT content FROM chapters WHERE id=? AND book_id=?',
-            (chapter_id, book_id),
-        ).fetchone()
-        if not chapter:
-            return jsonify({'error': 'A fejezet nem található'}), 404
-
-        units = enrichment.build_speaker_units(chapter['content'])
-        if unit_index < 0 or unit_index >= len(units):
-            return jsonify({'error': 'A szövegegység nem található'}), 404
-        annotation_rows = conn.execute(
-            'SELECT unit_index, speaker_name FROM speaker_annotations '
-            'WHERE chapter_id=?',
-            (chapter_id,),
-        ).fetchall()
-        effective_annotations = enrichment.expand_speaker_annotations(
-            chapter['content'],
-            {
-                int(row['unit_index']): str(row['speaker_name'] or '')
-                for row in annotation_rows
-            },
-        )
-        unit = units[unit_index]
-        requested_scope = str(body.get('scope') or '').strip().lower()
-        if not requested_scope:
-            requested_scope = 'turn' if body.get('apply_to_turn') else 'sentence'
-        if requested_scope not in {'sentence', 'turn_tail', 'turn', 'range'}:
-            return jsonify({'error': 'Érvénytelen javítási tartomány'}), 400
-
-        target_indexes = [unit_index]
-        range_end_unit_index = unit_index
-        if requested_scope == 'range':
-            try:
-                range_end_unit_index = int(body.get('range_end_unit_index'))
-            except (TypeError, ValueError):
-                return jsonify({'error': 'A valid range end is required'}), 400
-            if (
-                range_end_unit_index < unit_index
-                or range_end_unit_index >= len(units)
-            ):
-                return jsonify({'error': 'Érvénytelen beszélőtartomány'}), 400
-            if range_end_unit_index - unit_index > 200:
-                return jsonify({
-                    'error': 'A beszélőtartomány legfeljebb 201 szövegegység lehet'
-                }), 400
-            target_indexes = list(range(unit_index, range_end_unit_index + 1))
-        elif requested_scope != 'sentence' and unit.get('turn_index') is not None:
-            target_indexes = [
-                int(candidate['index'])
-                for candidate in units
-                if candidate.get('dialogue_candidate')
-                and candidate.get('turn_index') == unit.get('turn_index')
-                and (
-                    requested_scope == 'turn'
-                    or int(candidate['index']) >= unit_index
-                )
-            ]
-
-        canonical_name = ''
-        character_id = None
-        boundary_clear_indexes = []
-        if speaker_name:
-            existing = conn.execute(
-                'SELECT id, name FROM characters '
-                'WHERE book_id=? AND name=? COLLATE NOCASE',
-                (book_id, speaker_name),
-            ).fetchone()
-            if existing:
-                character_id = existing['id']
-                canonical_name = existing['name']
-            else:
-                profile = char_module.generate_voice_profile(
-                    speaker_name, 'unknown'
-                )
-                cursor = conn.execute(
-                    'INSERT INTO characters '
-                    '(book_id, name, gender, frequency, instruct, color_hex) '
-                    'VALUES (?,?,?,?,?,?)',
-                    (
-                        book_id, speaker_name, 'unknown', 0,
-                        profile['instruct'], profile['color_hex'],
-                    ),
-                )
-                character_id = cursor.lastrowid
-                canonical_name = speaker_name
-
-            for target_index in target_indexes:
-                target_unit = units[target_index]
-                conn.execute(
-                    'INSERT INTO speaker_annotations '
-                    '(book_id, chapter_id, unit_index, unit_text, speaker_name, '
-                    'confidence, source) VALUES (?,?,?,?,?,1.0,?) '
-                    'ON CONFLICT(chapter_id, unit_index) DO UPDATE SET '
-                    'unit_text=excluded.unit_text, speaker_name=excluded.speaker_name, '
-                    'confidence=excluded.confidence, source=excluded.source',
-                    (
-                        book_id, chapter_id, target_index, target_unit['text'],
-                        canonical_name, 'manual',
-                    ),
-                )
-
-            # An explicit range has an exact endpoint. Clear any old,
-            # contiguous assignment to the same speaker after that endpoint;
-            # otherwise the reader would merge the automatic tail back into
-            # the range the next time the editor is opened.
-            if requested_scope == 'range':
-                canonical_key = canonical_name.casefold()
-                next_index = target_indexes[-1] + 1
-                while (
-                    next_index < len(units)
-                    and str(effective_annotations.get(next_index) or '')
-                    .strip()
-                    .casefold() == canonical_key
-                ):
-                    boundary_clear_indexes.append(next_index)
-                    next_index += 1
-
-                for clear_index in boundary_clear_indexes:
-                    clear_unit = units[clear_index]
-                    conn.execute(
-                        'INSERT INTO speaker_annotations '
-                        '(book_id, chapter_id, unit_index, unit_text, '
-                        'speaker_name, confidence, source) '
-                        'VALUES (?,?,?,?,?,1.0,?) '
-                        'ON CONFLICT(chapter_id, unit_index) DO UPDATE SET '
-                        'unit_text=excluded.unit_text, '
-                        'speaker_name=excluded.speaker_name, '
-                        'confidence=excluded.confidence, '
-                        'source=excluded.source',
-                        (
-                            book_id, chapter_id, clear_index,
-                            clear_unit['text'], '', 'manual',
-                        ),
-                    )
-        else:
-            for target_index in target_indexes:
-                target_unit = units[target_index]
-                conn.execute(
-                    'INSERT INTO speaker_annotations '
-                    '(book_id, chapter_id, unit_index, unit_text, speaker_name, '
-                    'confidence, source) VALUES (?,?,?,?,?,1.0,?) '
-                    'ON CONFLICT(chapter_id, unit_index) DO UPDATE SET '
-                    'unit_text=excluded.unit_text, speaker_name=excluded.speaker_name, '
-                    'confidence=excluded.confidence, source=excluded.source',
-                    (
-                        book_id, chapter_id, target_index,
-                        target_unit['text'], '', 'manual',
-                    ),
-                )
-
-        conn.execute(
-            'UPDATE characters SET frequency=('
-            'SELECT COUNT(*) FROM speaker_annotations a '
-            'WHERE a.book_id=characters.book_id '
-            'AND a.speaker_name=characters.name COLLATE NOCASE'
-            ') WHERE book_id=?',
-            (book_id,),
-        )
-        conn.execute(
-            'DELETE FROM tts_segments WHERE book_id=? AND chapter_id=?',
-            (book_id, chapter_id),
-        )
-
-    return jsonify({
-        'ok': True,
-        'unit_index': unit_index,
-        'speaker_name': canonical_name or None,
-        'character_id': character_id,
-        'source': 'manual',
-        'updated_units': len(target_indexes),
-        'assigned_units': len(target_indexes),
-        'boundary_cleared_units': len(boundary_clear_indexes),
-        'scope': requested_scope,
-        'range_end_unit_index': target_indexes[-1],
-        'segments_cleared': True,
-    })
 
 
-@app.route('/api/books/<int:book_id>/progress', methods=['POST'])
-def save_progress(book_id):
-    from core import playback_progress
-    try:
-        playback_progress.save(book_id, request.get_json(force=True))
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 400
-    return jsonify(ok=True)
 
 
-@app.route('/api/books/<int:book_id>/progress')
-def get_progress(book_id):
-    from core import playback_progress
-    return jsonify(playback_progress.load(book_id))
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # Characters API
 # ════════════════════════════════════════════════════════════════════════════
 
-@app.route('/api/books/<int:book_id>/characters')
-def list_characters(book_id):
-    chapter_id = request.args.get('chapter_id', type=int)
-    chapter_character_names = None
-    if chapter_id is not None:
-        with get_conn() as conn:
-            chapter = conn.execute(
-                'SELECT id FROM chapters WHERE id=? AND book_id=?',
-                (chapter_id, book_id),
-            ).fetchone()
-        if not chapter:
-            return jsonify({'error': 'A fejezet nem található'}), 404
-        chapter_character_names = {
-            str(segment['character_name']).casefold()
-            for segment in _compute_segments_for_chapter(
-                book_id,
-                chapter_id,
-                single_narrator_mode=False,
-            )
-            if segment['character_name']
-        }
-
-    with get_conn() as conn:
-        rows = conn.execute(
-            'SELECT * FROM characters WHERE book_id=? ORDER BY frequency DESC',
-            (book_id,)
-        ).fetchall()
-    characters = [dict(r) for r in rows]
-    if chapter_character_names is not None:
-        characters = [
-            character
-            for character in characters
-            if str(character['name']).casefold() in chapter_character_names
-        ]
-    return jsonify(characters)
 
 
-@app.route('/api/books/<int:book_id>/characters/<int:char_id>', methods=['PUT'])
-def update_character(book_id, char_id):
-    body = request.get_json(force=True)
-    allowed = {'instruct', 'gender', 'color_hex', 'ref_text'}
-    updates = {k: v for k, v in body.items() if k in allowed}
-    if not updates:
-        return jsonify({'error': 'Nincs mit módosítani'}), 400
-    set_clause = ', '.join(f'{k}=?' for k in updates)
-    with get_conn() as conn:
-        prev = conn.execute(
-            'SELECT ref_audio_path, ref_text FROM characters WHERE id=? AND book_id=?',
-            (char_id, book_id),
-        ).fetchone()
-        conn.execute(
-            f'UPDATE characters SET {set_clause} WHERE id=? AND book_id=?',
-            (*updates.values(), char_id, book_id)
-        )
-    if prev and prev['ref_audio_path'] and 'ref_text' in updates:
-        tts.invalidate_voice_prompt(prev['ref_audio_path'], prev['ref_text'])
-        tts.invalidate_voice_prompt(prev['ref_audio_path'], updates.get('ref_text'))
-    _clear_book_tts_segments(book_id)
-    return jsonify({'ok': True, 'segments_cleared': True})
 
 
-@app.route('/api/books/<int:book_id>/characters/<int:char_id>/preview', methods=['POST'])
-def preview_character(book_id, char_id):
-    body = request.get_json(silent=True) or {}
-    with get_conn() as conn:
-        row = conn.execute('SELECT * FROM characters WHERE id=? AND book_id=?',
-                           (char_id, book_id)).fetchone()
-    if not row:
-        return jsonify({'error': 'Nem található'}), 404
-
-    status = tts.status()
-    if status['state'] != 'ready':
-        return jsonify({'error': 'A beszédmotor még nem áll készen', 'status': status}), 503
-
-    instruct = (body.get('instruct') or row['instruct'] or '').strip()
-    ref_audio = row['ref_audio_path'] if row['ref_audio_path'] else None
-    requested_ref_text = body.get('ref_text', row['ref_text'])
-    ref_text = requested_ref_text.strip() if ref_audio and isinstance(requested_ref_text, str) and requested_ref_text.strip() else None
-    book = _load_book(book_id)
-    language = book['language'] or 'hu'
-    sample_text = str(body.get('text') or (
-        'A délutáni fényben csendesen lapoztam a könyvet. Új történet kezdődik.'
-        if language == 'hu' else VOICE_PREVIEW_TEXT
-    )).strip()[:1500]
-
-    try:
-        result = tts.generate_preview(
-            instruct=instruct,
-            sample_text=sample_text,
-            language=language,
-            ref_audio=ref_audio,
-            ref_text=ref_text,
-        )
-        return jsonify({'audio_url': f'/api/audio/{result["cache_key"]}'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/books/<int:book_id>/narrator', methods=['GET'])
-def get_narrator(book_id):
-    book = _load_book(book_id)
-    if not book:
-        return jsonify({'error': 'Nem található'}), 404
-    book_data = dict(book)
-    return jsonify({
-        'instruct': _book_narrator_instruct(book_data),
-        'single_narrator_mode': _book_single_narrator_mode(book_data),
-        'ref_audio_name': book_data.get('narrator_ref_audio_name'),
-        'ref_text': book_data.get('narrator_ref_text') or '',
-    })
 
 
-@app.route('/api/books/<int:book_id>/narrator', methods=['PUT'])
-def update_narrator(book_id):
-    body = request.get_json(force=True) or {}
-    book = _load_book(book_id)
-    if not book:
-        return jsonify({'error': 'Nem található'}), 404
-    book_data = dict(book)
-
-    raw_instruct = body.get('instruct')
-    instruct = (
-        raw_instruct.strip()
-        if isinstance(raw_instruct, str)
-        else _book_narrator_instruct(book_data)
-    )
-    if not instruct:
-        return jsonify({'error': 'A narrátor hangleírása kötelező'}), 400
-
-    raw_mode = body.get('single_narrator_mode', _book_single_narrator_mode(book_data))
-    if isinstance(raw_mode, str):
-        single_narrator_mode = raw_mode.strip().lower() in {'1', 'true', 'yes', 'on'}
-    else:
-        single_narrator_mode = bool(raw_mode)
-    narrator_changed = instruct != _book_narrator_instruct(book_data)
-    mode_changed = single_narrator_mode != _book_single_narrator_mode(book_data)
-    raw_ref_text = body.get('ref_text', book_data.get('narrator_ref_text') or '')
-    ref_text = raw_ref_text.strip() if isinstance(raw_ref_text, str) else ''
-    ref_text_changed = ref_text != (book_data.get('narrator_ref_text') or '')
-
-    with get_conn() as conn:
-        if ref_text_changed and book_data.get('narrator_ref_audio_path'):
-            tts.invalidate_voice_prompt(
-                book_data['narrator_ref_audio_path'],
-                book_data.get('narrator_ref_text'),
-            )
-            tts.invalidate_voice_prompt(
-                book_data['narrator_ref_audio_path'],
-                ref_text or None,
-            )
-        conn.execute(
-            'UPDATE books SET narrator_instruct=?, single_narrator_mode=?, '
-            'narrator_ref_text=? WHERE id=?',
-            (instruct, int(single_narrator_mode), ref_text, book_id)
-        )
-
-    if narrator_changed or mode_changed or ref_text_changed:
-        _clear_book_tts_segments(book_id)
-
-    return jsonify({
-        'ok': True,
-        'instruct': instruct,
-        'single_narrator_mode': single_narrator_mode,
-        'ref_text': ref_text,
-        'segments_cleared': narrator_changed or mode_changed or ref_text_changed,
-    })
 
 
-@app.route('/api/books/<int:book_id>/characters/narrator/preview', methods=['POST'])
-def preview_narrator(book_id):
-    body = request.get_json(silent=True) or {}
-    book = _load_book(book_id)
-    if not book:
-        return jsonify({'error': 'Nem található'}), 404
-
-    status = tts.status()
-    if status['state'] != 'ready':
-        return jsonify({'error': 'A beszédmotor még nem áll készen', 'status': status}), 503
-
-    instruct = (body.get('instruct') or _book_narrator_instruct(dict(book))).strip()
-    narrator_ref, saved_ref_text = _book_narrator_reference(book_id)
-    requested_ref_text = body.get('ref_text', saved_ref_text)
-    narrator_ref_text = requested_ref_text.strip() if narrator_ref and isinstance(requested_ref_text, str) and requested_ref_text.strip() else None
-    try:
-        result = tts.generate_preview(
-            instruct=instruct,
-            sample_text=str(body.get('text') or (
-                'A délutáni fényben csendesen lapoztam a könyvet. Új történet kezdődik.'
-                if (book['language'] or 'hu') == 'hu' else VOICE_PREVIEW_TEXT
-            )).strip()[:1500],
-            language=book['language'] or 'hu',
-            ref_audio=narrator_ref,
-            ref_text=narrator_ref_text,
-        )
-        return jsonify({'audio_url': f'/api/audio/{result["cache_key"]}'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/characters/<int:char_id>/ref-audio', methods=['POST'])
-def upload_ref_audio(char_id):
-    if 'file' not in request.files:
-        return jsonify({'error': 'Nincs kiválasztott fájl'}), 400
-    f = request.files['file']
-    if not f.filename or not f.filename.lower().endswith('.wav'):
-        return jsonify({'error': 'A referenciahang WAV-fájl legyen'}), 400
-    ref_text = (request.form.get('ref_text') or '').strip()
-    with get_conn() as conn:
-        row = conn.execute(
-            'SELECT book_id, ref_audio_path, ref_text FROM characters WHERE id=?',
-            (char_id,),
-        ).fetchone()
-        if not row:
-            return jsonify({'error': 'Nem található'}), 404
-        if row['ref_audio_path']:
-            tts.invalidate_voice_prompt(row['ref_audio_path'], row['ref_text'])
-    path = _save_reference_upload(f, f'ref_{char_id}', clean=request.form.get('clean') == '1')
-    with get_conn() as conn:
-        conn.execute(
-            'UPDATE characters SET ref_audio_path=?, ref_audio_name=?, ref_text=? WHERE id=?',
-            (path, os.path.basename(f.filename), ref_text, char_id),
-        )
-    _delete_replaced_reference(row['ref_audio_path'], path, f'ref_{char_id}')
-    _clear_book_tts_segments(row['book_id'])
-    return jsonify({
-        'ok': True,
-        'ref_audio_name': os.path.basename(f.filename),
-        'ref_text': ref_text,
-    })
 
 
-@app.route('/api/characters/<int:char_id>/ref-audio', methods=['DELETE'])
-def delete_ref_audio(char_id):
-    with get_conn() as conn:
-        row = conn.execute(
-            'SELECT book_id, ref_audio_path, ref_text FROM characters WHERE id=?',
-            (char_id,),
-        ).fetchone()
-        if not row:
-            return jsonify({'error': 'Nem található'}), 404
-        conn.execute(
-            'UPDATE characters SET ref_audio_path=NULL, ref_audio_name=NULL, ref_text=NULL '
-            'WHERE id=?', (char_id,)
-        )
-    if row['ref_audio_path']:
-        tts.invalidate_voice_prompt(row['ref_audio_path'], row['ref_text'])
-    _delete_file_if_exists(row['ref_audio_path'])
-    _clear_book_tts_segments(row['book_id'])
-    return jsonify({'ok': True, 'segments_cleared': True})
 
 
-@app.route('/api/books/<int:book_id>/narrator-ref-audio', methods=['POST'])
-def upload_narrator_ref_audio(book_id):
-    if 'file' not in request.files:
-        return jsonify({'error': 'Nincs kiválasztott fájl'}), 400
-    f = request.files['file']
-    if not f.filename or not f.filename.lower().endswith('.wav'):
-        return jsonify({'error': 'A referenciahang WAV-fájl legyen'}), 400
-    ref_text = (request.form.get('ref_text') or '').strip()
-    with get_conn() as conn:
-        prev = conn.execute(
-            'SELECT narrator_ref_audio_path, narrator_ref_text FROM books WHERE id=?',
-            (book_id,),
-        ).fetchone()
-        if not prev:
-            return jsonify({'error': 'Nem található'}), 404
-        if prev['narrator_ref_audio_path']:
-            tts.invalidate_voice_prompt(
-                prev['narrator_ref_audio_path'], prev['narrator_ref_text']
-            )
-    path = _save_reference_upload(f, f'narrator_ref_{book_id}', clean=request.form.get('clean') == '1')
-    with get_conn() as conn:
-        conn.execute(
-            'UPDATE books SET narrator_ref_audio_path=?, narrator_ref_audio_name=?, '
-            'narrator_ref_text=? WHERE id=?',
-            (path, os.path.basename(f.filename), ref_text, book_id),
-        )
-    _delete_replaced_reference(
-        prev['narrator_ref_audio_path'], path, f'narrator_ref_{book_id}'
-    )
-    tts.invalidate_voice_prompt(path, ref_text or None)
-    _clear_book_tts_segments(book_id)
-    return jsonify({
-        'ok': True,
-        'ref_audio_name': os.path.basename(f.filename),
-        'ref_text': ref_text,
-    })
 
 
-@app.route('/api/books/<int:book_id>/narrator-ref-audio', methods=['DELETE'])
-def delete_narrator_ref_audio(book_id):
-    with get_conn() as conn:
-        row = conn.execute(
-            'SELECT narrator_ref_audio_path, narrator_ref_text FROM books WHERE id=?',
-            (book_id,),
-        ).fetchone()
-        if not row:
-            return jsonify({'error': 'Nem található'}), 404
-        path = row['narrator_ref_audio_path']
-        ref_text = row['narrator_ref_text']
-        conn.execute(
-            'UPDATE books SET narrator_ref_audio_path=NULL, narrator_ref_audio_name=NULL, '
-            'narrator_ref_text=NULL WHERE id=?', (book_id,)
-        )
-
-    if path:
-        tts.invalidate_voice_prompt(path, ref_text)
-    _delete_file_if_exists(path)
-    _clear_book_tts_segments(book_id)
-    return jsonify({'ok': True, 'segments_cleared': True})
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2811,15 +2246,13 @@ def _ensure_audio_for_chapter(
         return
 
     try:
-        from core.tts_engine import _tts_num_step_from_settings, _tts_batch_size_from_settings
+        from core.tts_engine import _tts_num_step_from_settings
         from core.settings import get as _settings_get
         num_step = _tts_num_step_from_settings()
         log.info(
-            "Export synth settings: num_step=%s tts_batch_size=%s coalesce_chars=%s "
-            "pending_segments=%d",
+            "Export synth settings: num_step=%s tts_batch_size=%s pending_segments=%d",
             num_step,
             _settings_get("tts_batch_size", 0),
-            _settings_get("tts_coalesce_chars", 0),
             len(pending_items),
         )
     except Exception:
@@ -3075,8 +2508,6 @@ def chapter_generation_status(book_id, chapter_id):
     methods=['POST'],
 )
 def generate_chapter_audio(book_id, chapter_id):
-    global _chapter_generation_active_job_id
-
     with get_conn() as conn:
         exists = conn.execute(
             'SELECT 1 FROM chapters WHERE id=? AND book_id=?',
@@ -3196,41 +2627,10 @@ def _get_chapter_segments(chapter_id, book_id):
 # Bookmarks API
 # ════════════════════════════════════════════════════════════════════════════
 
-@app.route('/api/books/<int:book_id>/bookmarks')
-def list_bookmarks(book_id):
-    with get_conn() as conn:
-        rows = conn.execute(
-            'SELECT b.*, c.title as chapter_title FROM bookmarks b '
-            'JOIN chapters c ON b.chapter_id = c.id '
-            'WHERE b.book_id=? ORDER BY b.created_at DESC',
-            (book_id,)
-        ).fetchall()
-    return jsonify([dict(r) for r in rows])
 
 
-@app.route('/api/books/<int:book_id>/bookmarks', methods=['POST'])
-def add_bookmark(book_id):
-    body = request.get_json(force=True) or {}
-    chapter_id = body.get('chapter_id')
-    segment_index = body.get('segment_index', 0)
-    text_excerpt = (body.get('text_excerpt', '') or '')[:200]
-    label = body.get('label', '')
-    if not chapter_id:
-        return jsonify({'error': 'chapter_id required'}), 400
-    with get_conn() as conn:
-        cur = conn.execute(
-            'INSERT INTO bookmarks (book_id, chapter_id, segment_index, text_excerpt, label) '
-            'VALUES (?,?,?,?,?)',
-            (book_id, chapter_id, segment_index, text_excerpt, label)
-        )
-    return jsonify({'ok': True, 'id': cur.lastrowid})
 
 
-@app.route('/api/books/<int:book_id>/bookmarks/<int:bm_id>', methods=['DELETE'])
-def delete_bookmark(book_id, bm_id):
-    with get_conn() as conn:
-        conn.execute('DELETE FROM bookmarks WHERE id=? AND book_id=?', (bm_id, book_id))
-    return jsonify({'ok': True})
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -3260,9 +2660,13 @@ from core.events_api import bp as events_blueprint
 from core.pwa_api import bp as pwa_blueprint
 from core.settings_api import bp as settings_blueprint
 from core.export_api import bp as export_blueprint
+from core.voices_api import bp as voices_blueprint
+from core.reading_api import bp as reading_blueprint
 app.register_blueprint(experience_blueprint)
 app.register_blueprint(settings_blueprint)
 app.register_blueprint(export_blueprint)
+app.register_blueprint(voices_blueprint)
+app.register_blueprint(reading_blueprint)
 app.register_blueprint(pwa_blueprint)
 app.register_blueprint(events_blueprint)
 app.register_blueprint(production_blueprint)

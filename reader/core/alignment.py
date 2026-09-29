@@ -15,7 +15,6 @@ displayed words of a segment (``text.split()`` order):
 from __future__ import annotations
 
 import json
-import re
 from difflib import SequenceMatcher
 
 from core.database import get_conn

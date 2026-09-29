@@ -17,7 +17,6 @@ from __future__ import annotations
 import hmac
 import os
 import subprocess
-import tempfile
 
 from flask import Blueprint, Response, jsonify, request
 

@@ -232,6 +232,7 @@ def reference_codes(model, ref_path, key=None):
     if cached is not None:
         _REFERENCE_CODES.move_to_end(cache_key)
         return cached
+    import soundfile as sf
     import torch
 
     audio, sr = sf.read(ref_path, always_2d=False)

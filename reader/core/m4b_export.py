@@ -7,7 +7,6 @@ import tempfile
 import time
 from pathlib import Path
 
-import numpy as np
 import soundfile as sf
 
 from core import sfx
