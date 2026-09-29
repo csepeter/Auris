@@ -140,6 +140,8 @@ DEFAULTS: dict = {
     'qa_cer_fail': 0.15,
     'qa_max_takes': 3,
     'asr_model': '',
+    # auto: Whisper on a CUDA GPU, Parakeet + Whisper confirmation on CPU.
+    'asr_backend': 'auto',
     'asr_keep_loaded': False,
     # Additional engines (core/local_engines.py)
     'piper_voice': 'anna',

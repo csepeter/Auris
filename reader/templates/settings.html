@@ -508,6 +508,16 @@
       <label>Legfeljebb ennyi új változat mondatonként<input type="number" id="qa-max-takes" class="text-input" min="0" max="8" step="1"></label>
     </div>
     <div class="setting-row">
+      <label>Beszédfelismerő</label>
+      <select id="asr-backend" class="select-input">
+        <option value="auto">Automatikus — videokártyán Whisper, processzoron Parakeet + Whisper</option>
+        <option value="whisper">Whisper (magyarra finomhangolt)</option>
+        <option value="hybrid">Parakeet, a gyanús mondatoknál Whisper-megerősítéssel</option>
+        <option value="parakeet">Csak Parakeet (a leggyorsabb processzoron)</option>
+      </select>
+      <span class="muted" style="font-size:.78rem">A Parakeet (NVIDIA, 25 európai nyelv) processzoron is gyors; az első használatkor kb. 2,4 GB-os modellt tölt le. Videokártyán a Whisper ugyanilyen gyors, és a magyar finomhangolás miatt ez az alapértelmezés.</span>
+    </div>
+    <div class="setting-row">
       <label>Saját beszédfelismerő modell (Hugging Face; üresen az alapértelmezett)</label>
       <input type="text" id="asr-model" class="text-input" placeholder="pl. openai/whisper-large-v3-turbo">
     </div>

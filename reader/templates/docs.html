@@ -824,6 +824,13 @@ ffprobe -version</code></pre>
         </div>
       </div>
 
+      <h3>Kvantálás és vLLM</h3>
+      <p>A 4 milliárd paraméteres Higgs súlyai bf16-ban kb. 8 GB-ot foglalnak (4 milliárd × 2 bájt),
+        ami egy 24 GB-os kártyán bőven elfér; ezért az Auris nem kvantálja. Az FP8 csak Ada és újabb (RTX 40xx, H100) kártyán
+        gyorsít, Ampere-en (RTX 30xx) nem támogatott. A bitsandbytes int8 csökkenti a memóriát, de
+        lassítja a generálást. A vLLM natív Windowson nem fut. A gyorsítás ezért a kötegelésből, a
+        referenciahang kódjainak gyorsítótárazásából és a hangszín-horgonyzásból jön, nem kvantálásból.</p>
+
       <div class="docs-callout">
         <span class="docs-callout-icon" aria-hidden="true">♪</span>
         <div>
@@ -1007,6 +1014,7 @@ ffprobe -version</code></pre>
           <ul class="docs-check-list">
             <li><strong>Beszédfelismerés:</strong> a Whisper visszahallgatja a mondatot, és a <strong>karakterhiba-arány (CER)</strong> megmutatja, mennyire tér el attól, aminek el kellett hangzania. A számokat kimondott alakban veti össze, az írásjeleket és a kis-nagybetűt nem számolja, az ékezeteket igen (<em>kor</em> ≠ <em>kór</em>). A könyv szereplőneveit is megkapja, hogy a nevek ne számítsanak hibának.</li>
             <li><strong>Hangjelek:</strong> túlvezérlés, 1,5 s-nál hosszabb szünet a mondaton belül, néma hang, a szöveghez képest túl gyors (levágott) vagy túl lassú (elnyújtott) felolvasás, illetve a fejezet többi mondatához képest szokatlan hossz.</li>
+            <li><strong>Beszédfelismerő:</strong> videokártyán a magyarra finomhangolt Whisper, processzoron automatikusan az NVIDIA Parakeet v3 fut (ONNX, első használatkor kb. 2,4 GB letöltés). Ez gyorsan meghallgat minden mondatot, és csak a gyanúsakat hallgatja vissza a Whisper is; a jobb olvasat számít. Saját mérés öt magyar mintán: a Parakeet CER-je 0,7–4,4%, a Whisperé 0,7–5,9%. A Parakeet számjegyekkel ír, ezt az összevetés kimondott alakra hozza. A választás a Beállítások → Minőségellenőrzés → <strong>Beszédfelismerő</strong> alatt módosítható.</li>
             <li>Állapot: <strong>Rendben</strong>; <strong>Gyanús</strong> 8% CER felett vagy hangjelzésnél; <strong>Hibás</strong> 15% CER felett vagy néma hangnál. A küszöb a Beállítások → Minőségellenőrzés alatt módosítható.</li>
           </ul>
         </div>

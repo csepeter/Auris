@@ -79,6 +79,13 @@ text is in `reader/core/vendor/omnivoice_triton/LICENSE`. The optional Triton
 compiler (`triton`, or `triton-windows` on Windows, MIT) is installed by the
 user from Settings.
 
+## onnx-asr and NVIDIA Parakeet TDT 0.6B v3
+
+Quality control can use the `onnx-asr` package (MIT) to run NVIDIA Parakeet
+TDT 0.6B v3. The ONNX export (`istupakov/parakeet-tdt-0.6b-v3-onnx`) is
+downloaded from Hugging Face on first use; the model is licensed under
+CC-BY-4.0 by NVIDIA.
+
 ## Piper and Hungarian Piper voices (optional)
 
 The optional Piper engine uses the `piper-tts` package (piper1-gpl,

@@ -236,8 +236,121 @@ def asr_model_for(language: str | None) -> str:
     return MULTILINGUAL_ASR_MODEL
 
 
+PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v3"
+# NVIDIA Parakeet TDT 0.6B v3 (CC-BY-4.0) covers these 25 European languages.
+PARAKEET_LANGUAGES = frozenset(
+    "bg hr cs da nl en et fi fr de el hu it lv lt mt pl pt ro sk sl es sv ru uk".split())
+ASR_BACKENDS = ("auto", "whisper", "parakeet", "hybrid")
+
+
+def parakeet_available() -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec("onnx_asr") is not None
+
+
+def asr_backend_for(language: str | None) -> str:
+    """Effective ASR backend: ``whisper``, ``parakeet`` or ``hybrid``.
+
+    ``auto`` keeps Whisper on a CUDA GPU (fast and already measured) and uses
+    Parakeet on CPU, where Whisper large-v3-turbo is several times slower;
+    ``hybrid`` re-checks only the suspicious sentences with Whisper.
+    """
+    try:
+        from core import settings
+
+        requested = str(settings.get("asr_backend", "auto") or "auto")
+    except Exception:
+        requested = "auto"
+    if requested not in ASR_BACKENDS:
+        requested = "auto"
+    lang = str(language or "").lower()[:2]
+    parakeet_ok = parakeet_available() and (not lang or lang in PARAKEET_LANGUAGES)
+    if requested == "auto":
+        try:
+            import torch
+
+            gpu = bool(torch.cuda.is_available())
+        except Exception:
+            gpu = False
+        return "whisper" if gpu or not parakeet_ok else "hybrid"
+    if requested in ("parakeet", "hybrid") and not parakeet_ok:
+        return "whisper"
+    return requested
+
+
+def _parakeet_words(tokens, timestamps, duration: float) -> list[dict]:
+    """Group Parakeet sub-word tokens (a leading space starts a word)."""
+    words = []
+    boundary = True
+    for token, start in zip(tokens or [], timestamps or []):
+        if not token.strip():  # a lone space token also separates words (" ", "8")
+            boundary = True
+            continue
+        if token.startswith(" ") or boundary or not words:
+            words.append({"word": token.strip(), "start": float(start), "end": None})
+        else:
+            words[-1]["word"] += token
+        boundary = False
+    for current, following in zip(words, words[1:] + [None]):
+        current["end"] = following["start"] if following else max(current["start"] + 0.2, duration)
+    return [w for w in words if any(ch.isalnum() for ch in w["word"])]
+
+
+class ParakeetTranscriber:
+    """NVIDIA Parakeet TDT v3 through ONNX Runtime (CPU); text and word
+    timings come from one pass. The ~2.4 GB model is downloaded on first use."""
+
+    single_pass_words = True
+    confirms = False
+
+    def __init__(self):
+        self.model_id = PARAKEET_MODEL
+        self._model = None
+        self._lock = threading.Lock()
+
+    def unload(self) -> None:
+        self._model = None
+
+    def transcribe(self, path: str, language: str | None = None, *,
+                   prompt: str = "", word_timestamps: bool = False) -> dict:
+        with self._lock:
+            if self._model is None:
+                import onnx_asr
+
+                self._model = onnx_asr.load_model(PARAKEET_MODEL).with_timestamps()
+                log.info("ASR model %s loaded (ONNX Runtime)", PARAKEET_MODEL)
+            audio, sr = sf.read(path, dtype="float32", always_2d=True)
+            audio = audio.mean(axis=1)
+            if sr != 16000:
+                from core.local_engines import resample
+
+                audio = resample(audio, sr, 16000)
+            result = self._model.recognize(audio)
+        duration = len(audio) / 16000.0
+        return {"text": str(result.text or "").strip(),
+                "words": _parakeet_words(result.tokens, result.timestamps, duration)}
+
+
+class HybridTranscriber(ParakeetTranscriber):
+    """Parakeet first; Whisper only re-listens to sentences that look wrong."""
+
+    confirms = True
+
+    def __init__(self, whisper: "Transcriber"):
+        super().__init__()
+        self.whisper = whisper
+        self.model_id = f"{PARAKEET_MODEL} + {whisper.model_id}"
+
+    def confirm(self, path: str, language: str | None = None, *, prompt: str = "") -> dict:
+        return self.whisper.transcribe(path, language, prompt=prompt)
+
+
 class Transcriber:
     """Lazy Whisper pipeline; one instance per model, loaded on first use."""
+
+    single_pass_words = False
+    confirms = False
 
     _instances: dict[str, "Transcriber"] = {}
     _instances_lock = threading.Lock()
@@ -248,7 +361,7 @@ class Transcriber:
         self._lock = threading.Lock()
 
     @classmethod
-    def for_language(cls, language: str | None) -> "Transcriber":
+    def whisper_for(cls, language: str | None) -> "Transcriber":
         model_id = asr_model_for(language)
         with cls._instances_lock:
             if model_id not in cls._instances:
@@ -256,10 +369,33 @@ class Transcriber:
             return cls._instances[model_id]
 
     @classmethod
+    def for_language(cls, language: str | None):
+        """The configured ASR backend for this language (see asr_backend_for)."""
+        backend = asr_backend_for(language)
+        if backend == "whisper":
+            return cls.whisper_for(language)
+        key = f"{backend}:{PARAKEET_MODEL}"
+        with cls._instances_lock:
+            if key not in cls._instances:
+                cls._instances[key] = (ParakeetTranscriber() if backend == "parakeet"
+                                       else HybridTranscriber(cls.whisper_for_unlocked(language)))
+            return cls._instances[key]
+
+    @classmethod
+    def whisper_for_unlocked(cls, language: str | None) -> "Transcriber":
+        model_id = asr_model_for(language)
+        if model_id not in cls._instances:
+            cls._instances[model_id] = cls(model_id)
+        return cls._instances[model_id]
+
+    @classmethod
     def unload_all(cls) -> None:
         with cls._instances_lock:
             for item in cls._instances.values():
-                item._pipe = None
+                if isinstance(item, ParakeetTranscriber):
+                    item.unload()
+                else:
+                    item._pipe = None
             cls._instances.clear()
         try:
             import gc

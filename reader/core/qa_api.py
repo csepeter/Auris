@@ -117,21 +117,32 @@ def _asr_prompt(chars: dict) -> str:
 
 
 def _evaluate(path: str, text: str, language, *, transcriber, prompt: str,
-              cache_key: str | None = None, align: bool = True) -> dict:
+              cache_key: str | None = None, align: bool = True,
+              confirm_above: float = qa.DEFAULT_CER_WARN) -> dict:
     from core import alignment
 
     metrics = qa.analyze_audio(path, text)
     result = {"metrics": metrics, "flags": list(metrics["flags"]), "cer": None,
               "wer": None, "heard": None}
     if transcriber is not None:
-        heard = transcriber.transcribe(path, language, prompt=prompt)
+        single_pass = getattr(transcriber, "single_pass_words", False)
+        heard = transcriber.transcribe(path, language, prompt=prompt, word_timestamps=single_pass)
         score = qa.score_transcript(text, heard["text"], language)
+        if getattr(transcriber, "confirms", False) and score["cer"] >= confirm_above:
+            # Hybrid ASR: a suspicious sentence is re-heard by Whisper; the
+            # better reading counts, so a Parakeet slip never fails good audio.
+            second = transcriber.confirm(path, language, prompt=prompt)
+            second_score = qa.score_transcript(text, second["text"], language)
+            if second_score["cer"] < score["cer"]:
+                score, heard = second_score, {**second, "words": heard.get("words")}
         result.update(cer=score["cer"], wer=score["wer"], heard=heard["text"],
                       missing=score["missing_words"])
         if align and cache_key:
-            # A second pass with word timestamps drives read-along highlighting.
+            # Word timestamps drive read-along highlighting (a second Whisper
+            # pass; Parakeet already returned them).
             try:
-                timed = transcriber.transcribe(path, language, word_timestamps=True)
+                timed = heard if single_pass and heard.get("words") else transcriber.transcribe(
+                    path, language, word_timestamps=True)
                 timings = alignment.align_words(text, timed["words"], metrics["duration_sec"], language)
                 alignment.store(cache_key, timings, "asr")
             except Exception as exc:
@@ -227,7 +238,8 @@ def run_qa_job(job_id: str, book_id: int, chapter_id: int, use_asr: bool, auto_r
                 evaluations.append(None)
                 continue
             evaluation = _evaluate(path, seg["text"], language, transcriber=transcriber,
-                                   prompt=prompt, cache_key=seg.get("cache_key"))
+                                   prompt=prompt, cache_key=seg.get("cache_key"),
+                                   confirm_above=options["cer_warn"])
             evaluations.append(evaluation)
             job["done"] = index + 1
             job["message"] = f"Ellenőrzés ({index + 1}/{len(segs)})"
@@ -258,7 +270,8 @@ def run_qa_job(job_id: str, book_id: int, chapter_id: int, use_asr: bool, auto_r
                     _record_take(book_id, chapter_id, seg, take, result)
                     candidate = _evaluate(result["audio_path"], seg["text"], language,
                                           transcriber=transcriber, prompt=prompt,
-                                          cache_key=result["cache_key"])
+                                          cache_key=result["cache_key"],
+                                          confirm_above=options["cer_warn"])
                     candidate_status = qa.classify(candidate["cer"], candidate["flags"],
                                                    warn=options["cer_warn"], fail=options["cer_fail"])
                     _store(book_id, chapter_id, seg, result["cache_key"], candidate,

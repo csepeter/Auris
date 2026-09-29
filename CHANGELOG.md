@@ -12,6 +12,30 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- **Parakeet beszédfelismerés processzoron**: választható ASR-háttér a minőségellenőrzéshez (Automatikus, Whisper, Parakeet, Parakeet + Whisper-megerősítés). Automatikus módban videokártyán a magyar Whisper, processzoron az NVIDIA Parakeet v3 fut (ONNX), és csak a gyanús mondatokat hallgatja vissza a Whisper is. A Parakeet egy menetben adja a szöveget és a szóidőket.
+
+#### Változott
+
+- A teljes könyv generálása és a fejezet ellenőrzése akkor is elindítható, ha a beszédmotor még töltődik: a feladat megvárja a betöltést, és ezt ki is írja. Korábban 503-as hibát adott.
+- A súgó leírja, miért nem kvantálja az Auris a Higgs-modellt (FP8, int8, vLLM).
+
+### English
+
+#### Added
+
+- **Parakeet speech recognition on CPU**: a selectable ASR backend for quality control (Automatic, Whisper, Parakeet, Parakeet + Whisper confirmation). Automatic uses the Hungarian Whisper on a GPU and NVIDIA Parakeet v3 (ONNX) on CPU, where only suspicious sentences are re-checked by Whisper. Parakeet returns text and word timings in one pass.
+
+#### Changed
+
+- Whole-book generation and chapter checks can start while the speech engine is still loading; the job waits and says so instead of returning HTTP 503.
+- The documentation explains why Auris does not quantise the Higgs model (FP8, int8, vLLM).
+
 ## [4.1.0] - 2026-09-29
 
 ### Magyar

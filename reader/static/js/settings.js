@@ -181,6 +181,8 @@ async function loadSettings() {
   setNumber('qa-cer-fail', Math.round((_settings.qa_cer_fail ?? 0.15) * 100));
   setNumber('qa-max-takes', _settings.qa_max_takes ?? 3);
   setNumber('asr-model', _settings.asr_model || '');
+  const asrBackend = document.getElementById('asr-backend');
+  if (asrBackend) asrBackend.value = _settings.asr_backend || 'auto';
   setNumber('narrator-credit', _settings.narrator_credit || '');
   setNumber('export-intro-template', _settings.export_intro_template || '');
   setNumber('export-outro-template', _settings.export_outro_template || '');
@@ -720,6 +722,7 @@ async function saveSettingsValues() {
     qa_cer_fail: (parseFloat(document.getElementById('qa-cer-fail')?.value || '15') || 15) / 100,
     qa_max_takes: parseInt(document.getElementById('qa-max-takes')?.value || '3', 10),
     asr_model: (document.getElementById('asr-model')?.value || '').trim(),
+    asr_backend: document.getElementById('asr-backend')?.value || 'auto',
     narrator_credit: (document.getElementById('narrator-credit')?.value || '').trim(),
     export_intro_template: document.getElementById('export-intro-template')?.value || '',
     export_outro_template: document.getElementById('export-outro-template')?.value || '',

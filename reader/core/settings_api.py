@@ -69,7 +69,7 @@ def save_settings():
         'trim_segment_silence', 'export_room_tone',
         'narrator_credit', 'export_intro_template', 'export_outro_template',
         'abs_url', 'abs_api_token', 'abs_library_id', 'abs_folder_id', 'api_token',
-        'qa_cer_warn', 'qa_cer_fail', 'qa_max_takes', 'asr_model', 'asr_keep_loaded',
+        'qa_cer_warn', 'qa_cer_fail', 'qa_max_takes', 'asr_model', 'asr_keep_loaded', 'asr_backend',
         'tts_accel', 'tts_export_workers',
         'character_detection_mode', 'llm_provider',
         'llm_base_url', 'llm_api_key', 'llm_model',
@@ -162,6 +162,8 @@ def save_settings():
     for key in ('trim_segment_silence', 'export_room_tone', 'asr_keep_loaded'):
         if key in updates:
             updates[key] = bool(updates[key])
+    if 'asr_backend' in updates and updates['asr_backend'] not in ('auto', 'whisper', 'parakeet', 'hybrid'):
+        return jsonify({'error': 'Ismeretlen beszédfelismerő.'}), 400
     if 'asr_model' in updates:
         model = str(updates['asr_model'] or '').strip()
         if model and not security.valid_hf_repo(model):
