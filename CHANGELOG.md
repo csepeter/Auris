@@ -12,6 +12,20 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-09-29
+
+### Magyar
+
+#### Javítva
+
+- A README telepítési parancsa a magyar forkot klónozza, és a projektleírás egyértelműen megjelöli az eredeti repóhoz fűződő kapcsolatot.
+
+### English
+
+#### Fixed
+
+- The README installation command clones the Hungarian fork, and the project description identifies its relationship to the upstream repository.
+
 ## [3.4.0] - 2026-09-13
 
 ### Magyar

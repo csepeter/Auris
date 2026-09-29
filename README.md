@@ -2,6 +2,11 @@
 
 [![Latest release](https://img.shields.io/github/v/release/mp3pintyo/Auris?label=verzi%C3%B3)](https://github.com/mp3pintyo/Auris/releases/latest)
 
+Az Auris [eredeti projektjének](https://github.com/nikhilprasanth/Auris) magyar
+nyelvű forkja. Magyar felülettel és súgóval, helyben futó hangoskönyv-olvasóval.
+
+This is the Hungarian-language fork of the [original Auris project](https://github.com/nikhilprasanth/Auris).
+
 Current version: [`VERSION`](VERSION). See the complete bilingual
 [`CHANGELOG.md`](CHANGELOG.md) and the [`RELEASING.md`](RELEASING.md) guide for
 the versioning and release process.
@@ -76,7 +81,7 @@ labels and the updated workflows described below and in the built-in help.
 ## Installation
 
 ```bash
-git clone https://github.com/nikhilprasanth/Auris.git
+git clone https://github.com/mp3pintyo/Auris.git
 cd Auris
 ```
 
