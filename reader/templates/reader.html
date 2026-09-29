@@ -9,6 +9,7 @@
     <div class="toc-header">
       <span class="book-title-short" title="{{ book.title }}">{{ book.title }}</span>
       <a href="/voice-studio/{{ book.id }}" id="voice-studio-link" class="btn btn-sm btn-ghost" title="Hangstúdió">Hangok</a>
+      <a href="/production/{{ book.id }}" id="production-link" class="btn btn-sm btn-ghost" title="Hangoskönyv-produkció">Produkció</a>
       <a href="/qa/{{ book.id }}" id="qa-link" class="btn btn-sm btn-ghost" title="Minőségellenőrzés">Ellenőrzés</a>
       <button id="toc-close" class="btn btn-sm btn-ghost toc-close" title="Tartalomjegyzék bezárása" aria-label="Tartalomjegyzék bezárása">&#215;</button>
     </div>
@@ -41,7 +42,7 @@
   <!-- Centre: Reading area -->
   <main class="reader-main" id="reader-main">
     <div class="reader-toolbar" aria-label="Olvasási eszközök">
-      <button id="toc-toggle" class="btn btn-sm btn-ghost" title="Tartalomjegyzék (C)" aria-label="Tartalomjegyzék" aria-controls="toc-sidebar" aria-expanded="true">&#8801;</button>
+      <button id="toc-toggle" class="btn btn-sm btn-ghost" title="Tartalomjegyzék (C)" aria-label="Tartalomjegyzék" aria-controls="toc-sidebar" aria-expanded="true"><span data-icon="toc"></span></button>
       <span id="chapter-title" class="chapter-title-bar"></span>
       <span id="reading-estimate" class="reading-estimate"></span>
 
@@ -59,12 +60,12 @@
           Beszélők javítása
         </button>
         {% endif %}
-        <button class="btn btn-sm btn-ghost" id="book-search-btn" type="button" title="Keresés a könyvben" aria-label="Keresés a könyvben">&#128269;</button>
+        <button class="btn btn-sm btn-ghost" id="book-search-btn" type="button" title="Keresés a könyvben" aria-label="Keresés a könyvben"><span data-icon="search"></span></button>
         <button class="btn btn-sm btn-ghost" onclick="changeFontSize(-1)" title="Kisebb szöveg" aria-label="Kisebb szöveg">A&#8722;</button>
         <button class="btn btn-sm btn-ghost" onclick="changeFontSize(1)" title="Nagyobb szöveg" aria-label="Nagyobb szöveg">A+</button>
-        <button class="btn btn-sm btn-ghost" id="theme-cycle-btn" onclick="cycleTheme()" title="Téma váltása (T)" aria-label="Téma váltása">&#9675;</button>
-        <button class="btn btn-sm btn-ghost" id="bookmark-btn" onclick="addBookmark()" title="Könyvjelző hozzáadása (B)" aria-label="Könyvjelző hozzáadása">&#9734;</button>
-        <button class="btn btn-sm btn-ghost" id="bm-panel-toggle" onclick="toggleBookmarkPanel()" title="Könyvjelzők" aria-label="Könyvjelzők">&#9776;</button>
+        <button class="btn btn-sm btn-ghost" id="theme-cycle-btn" onclick="cycleTheme()" title="Téma váltása (T)" aria-label="Téma váltása"><span data-icon="theme"></span></button>
+        <button class="btn btn-sm btn-ghost" id="bookmark-btn" onclick="addBookmark()" title="Könyvjelző hozzáadása (B)" aria-label="Könyvjelző hozzáadása"><span data-icon="bookmark"></span></button>
+        <button class="btn btn-sm btn-ghost" id="bm-panel-toggle" onclick="toggleBookmarkPanel()" title="Könyvjelzők" aria-label="Könyvjelzők"><span data-icon="list"></span></button>
         <button class="btn btn-sm btn-ghost" id="shortcuts-btn" onclick="showShortcuts()" title="Billentyűparancsok (?)" aria-label="Billentyűparancsok">?</button>
       </div>
     </div>
@@ -170,14 +171,19 @@
 <!-- Playback bar -->
 <div class="playback-bar" id="playback-bar">
   <div class="playback-left">
-    <button id="btn-prev-seg" class="pb-btn" title="Előző szakasz (&#8592;)" aria-label="Előző szakasz">&#10094;</button>
-    <button id="btn-seek-back" class="pb-btn pb-seek" title="15 másodperc vissza" aria-label="15 másodperc vissza">&#8634;<span>15</span></button>
-    <button id="btn-play" class="pb-btn pb-play paused" title="Lejátszás vagy szünet (Szóköz)" aria-label="Lejátszás">&#9654;</button>
-    <button id="btn-seek-forward" class="pb-btn pb-seek" title="15 másodperc előre" aria-label="15 másodperc előre">&#8635;<span>15</span></button>
-    <button id="btn-next-seg" class="pb-btn" title="Következő szakasz (&#8594;)" aria-label="Következő szakasz">&#10095;</button>
-    <button id="btn-stop" class="pb-btn" title="Leállítás" aria-label="Leállítás">&#9632;</button>
+    <button id="btn-prev-seg" class="pb-btn" title="Előző szakasz (&#8592;)" aria-label="Előző szakasz"><span data-icon="prev"></span></button>
+    <button id="btn-seek-back" class="pb-btn pb-seek" title="15 másodperc vissza" aria-label="15 másodperc vissza (J)"><span data-icon="back15"></span><span>15</span></button>
+    <button id="btn-play" class="pb-btn pb-play paused" title="Lejátszás vagy szünet (Szóköz)" aria-label="Lejátszás"><span data-icon="play"></span></button>
+    <button id="btn-seek-forward" class="pb-btn pb-seek" title="15 másodperc előre" aria-label="15 másodperc előre (L)"><span data-icon="fwd15"></span><span>15</span></button>
+    <button id="btn-next-seg" class="pb-btn" title="Következő szakasz (&#8594;)" aria-label="Következő szakasz"><span data-icon="next"></span></button>
+    <button id="btn-stop" class="pb-btn" title="Leállítás" aria-label="Leállítás"><span data-icon="stop"></span></button>
   </div>
   <div class="playback-center">
+    <div class="pb-timeline">
+      <span id="chapter-time-elapsed" class="pb-time num">0:00</span>
+      <input type="range" id="chapter-timeline" min="0" max="1" step="1" value="0" aria-label="Pozíció a fejezetben">
+      <span id="chapter-time-total" class="pb-time num">0:00</span>
+    </div>
     <span id="pb-character" class="pb-character">&#8212;</span>
     <span id="pb-progress"  class="pb-progress">0 / 0</span>
     <span id="pb-remaining" class="pb-remaining" aria-live="polite">Hátralévő idő: —</span>
@@ -289,7 +295,11 @@
     <div class="shortcut-row"><span class="shortcut-key">T</span><span class="shortcut-desc">Téma váltása</span></div>
     <div class="shortcut-row"><span class="shortcut-key">C</span><span class="shortcut-desc">Tartalomjegyzék</span></div>
     <div class="shortcut-row"><span class="shortcut-key">M</span><span class="shortcut-desc">Könyvjelzők</span></div>
-    <div class="shortcut-row"><span class="shortcut-key">?</span><span class="shortcut-desc">Súgó megnyitása</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">J / L</span><span class="shortcut-desc">15 másodperc vissza / előre</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">[ / ]</span><span class="shortcut-desc">Lassabb / gyorsabb (0,1×)</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">&#8593; / &#8595;</span><span class="shortcut-desc">Előző / következő mondat (a szövegben)</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">Enter</span><span class="shortcut-desc">A kijelölt mondat lejátszása</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">?</span><span class="shortcut-desc">Billentyűparancsok megjelenítése</span></div>
     <div class="shortcut-row"><span class="shortcut-key">Esc</span><span class="shortcut-desc">Ablak bezárása</span></div>
     <div style="margin-top:16px">
       <button class="btn btn-ghost btn-sm" onclick="hideShortcuts()">Bezárás</button>
@@ -298,16 +308,20 @@
 </div>
 
 <!-- Toast container -->
-<div class="toast-container" id="toast-container"></div>
+<div class="toast-container" id="toast-container" role="status" aria-live="polite"></div>
 
 <audio id="tts-audio" style="display:none"></audio>
 {% endblock %}
 {% block scripts %}
 <script>window.BOOK_ID = {{ book.id }};</script>
-<script>window.BOOK_TITLE = {{ book.title|tojson }};</script>
+<script>window.BOOK_TITLE = {{ book.title|tojson }}; window.BOOK_AUTHOR = {{ (book.author or '')|tojson }};
+window.BOOK_COVER_URL = {{ ('/api/books/' ~ book.id ~ '/cover') if book.cover_b64 else ''|tojson }};</script>
 <script>window.SINGLE_NARRATOR_MODE = {{ 1 if book.single_narrator_mode else 0 }};</script>
 <script src="/static/js/listening.js"></script>
 <script src="/static/js/reader.js"></script>
+<script src="/static/js/reader-tools.js"></script>
+<script src="/static/js/reader-export.js"></script>
 <script src="/static/js/pronunciation-popover.js"></script>
+<script src="/static/js/reader-init.js"></script>
 <script src="/static/js/text-editor.js"></script>
 {% endblock %}

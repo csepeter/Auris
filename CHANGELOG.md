@@ -12,6 +12,54 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- **Produkció oldal** minden könyvhöz: lépéssor az importtól az exportig, fejezetenkénti hang- és ellenőrzési állapot, szereposztás, a teljes könyv generálása egy gombbal és gyors exportgombok.
+- **Parancssor** (`auris_cli.py`): könyvek listázása, importálás, generálás, ellenőrzés, export és egyszeri felolvasás.
+- **OpenAI-kompatibilis felület** (`POST /v1/audio/speech`, `/v1/models`, `/v1/audio/voices`) az aktív beszédmotorral és a mentett magyar hangprofilokkal, opcionális tokenes védelemmel.
+- **Docker** futtatás (`docker compose up -d`) NVIDIA GPU-val vagy CPU-val.
+- **Telepíthető alkalmazás**: a böngészőből telepíthető, a már elkészült hangrészek szerver nélkül is lejátszhatók.
+- Élő frissítés egyetlen szerveresemény-csatornán; a menüben jelvény mutatja a futó feladatokat.
+- Lejátszó: fejezet-idősáv, megjegyzett lejátszási sebesség, <kbd>J</kbd>/<kbd>L</kbd> és <kbd>[</kbd>/<kbd>]</kbd> billentyűk, mondatonkénti billentyűzetes bejárás, borító és szerző a telefon zárolt képernyőjén.
+- Hangstúdió: mikrofonos referenciafelvétel csendlevágással, hangprofilok összehasonlítása ugyanazon a mondaton, hangforrás-jelvények, rendezés, több szereplőre egyszerre alkalmazható profil, visszajátszható referenciák, magyar hangleírások.
+- Könyvtár: betűborító a borító nélküli könyveknek, készültségi sávok, közvetlen linkek; a Szereplőhangok import-mód nyelvi modell nélkül magyarázattal le van tiltva; a már meglévő könyvet a figyelmeztetés megnevezi.
+- Feladatok: magyar feladatnevek, időpontok és időtartam, szűrők, letöltési linkek.
+
+#### Változott
+
+- Egységes megjelenés: közös színek és térközök, SVG-ikonok, világos és sötét téma villanás nélkül, látható fókusz, kevesebb animáció a mozgáscsökkentést kérőknek, értesítések felugró ablak helyett.
+- Telefonon is használható menü, eszköztár, Könyvtár és Feladatok oldal.
+- A felület szövegei magyarul, egy helyen (`static/i18n/hu.json`) tárolódnak; a szerver hibaüzenetei is magyarok.
+- A Könyvtár egyetlen kéréssel tölti be a könyvek készültségét.
+- Az olvasó, a beállítások és az export kódja kisebb, önálló modulokra bomlott; a nem használt hangösszevonási kód kikerült.
+
+### English
+
+#### Added
+
+- **Production page** per book: pipeline from import to export, per-chapter audio and quality status, cast overview, one-click whole-book generation and quick exports.
+- **Command line** (`auris_cli.py`): list books, import, generate, quality-check, export and one-off speech.
+- **OpenAI-compatible API** (`POST /v1/audio/speech`, `/v1/models`, `/v1/audio/voices`) using the active engine and saved Hungarian voice profiles, with optional token protection.
+- **Docker** deployment (`docker compose up -d`) with an NVIDIA GPU or on CPU.
+- **Installable app**: install from the browser; audio that has already been generated plays without the server.
+- Live updates over one server-event stream; the menu shows a badge for running jobs.
+- Player: chapter timeline, remembered playback speed, <kbd>J</kbd>/<kbd>L</kbd> and <kbd>[</kbd>/<kbd>]</kbd> shortcuts, keyboard navigation between sentences, cover and author on the phone lock screen.
+- Voice Studio: microphone reference recording with silence trimming, side-by-side profile comparison on the same sentence, voice-source badges, sorting, applying one profile to several characters, playable references, Hungarian voice descriptions.
+- Library: typographic covers for books without artwork, progress bars, direct links; the Character voices import mode is disabled with an explanation when no language model is configured; the duplicate warning names the existing book.
+- Jobs: Hungarian job names, timestamps and durations, filters, download links.
+
+#### Changed
+
+- Consistent design: shared colour and spacing tokens, SVG icons, light and dark themes without a flash, visible focus, reduced motion when requested, toasts instead of pop-up alerts.
+- Phone-friendly navigation, toolbar, Library and Jobs pages.
+- Interface strings are Hungarian and kept in one place (`static/i18n/hu.json`); server error messages are Hungarian too.
+- The Library loads every book's progress in a single request.
+- Reader, settings and export code is split into smaller modules; unused audio-coalescing code was removed.
+
 ## [3.8.0] - 2026-09-29
 
 ### Magyar

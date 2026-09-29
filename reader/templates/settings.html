@@ -488,6 +488,10 @@
       <button class="btn btn-ghost btn-sm" type="button" onclick="loadAbsLibraries()">Könyvtárak betöltése</button>
       <span id="abs-hint" class="status-hint"></span>
     </div>
+    <div class="setting-row">
+      <label>Kulcs az OpenAI-kompatibilis felolvasó felülethez (<code>/v1/audio/speech</code>) <span class="muted">— üresen nincs kulcs, csak erről a gépről érhető el</span></label>
+      <input type="password" id="api-token" class="text-input" autocomplete="off" style="max-width:320px">
+    </div>
   </section>
 
   <!-- Quality control -->
@@ -600,8 +604,8 @@
   </div>
 
   <div class="settings-footer">
-    <button class="btn btn-primary" onclick="saveSettings(true)">Mentés és motor alkalmazása</button>
     <button class="btn btn-primary" onclick="saveSettings()">Beállítások mentése</button>
+    <button class="btn btn-ghost" onclick="saveSettings(true)" title="Mentés, majd a kiválasztott beszédmotor újratöltése">Mentés és motor újratöltése</button>
     <span id="save-hint" class="status-hint"></span>
   </div>
 </div>

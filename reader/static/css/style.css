@@ -207,7 +207,7 @@
 }
 
 /* Sepia */
-body.theme-sepia {
+:root.theme-sepia {
   --bg:       #f0e8d0;
   --bg2:      #ede0c4;
   --bg3:      #e4d5b0;
@@ -226,7 +226,7 @@ body.theme-sepia {
 }
 
 /* Paper */
-body.theme-paper {
+:root.theme-paper {
   --bg:       #f7f5f2;
   --bg2:      #ffffff;
   --bg3:      #f0ede8;
@@ -245,7 +245,7 @@ body.theme-paper {
 }
 
 /* AMOLED */
-body.theme-amoled {
+:root.theme-amoled {
   --bg:       #000000;
   --bg2:      #0c0b0a;
   --bg3:      #141210;
@@ -579,16 +579,19 @@ code {
 
 .toc-header {
   padding: 14px 16px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   flex-shrink: 0;
 }
+/* Title (and the mobile close button) on the first row, book links below. */
+.toc-header > .btn:not(.toc-close) { order: 2; }
+.toc-header > .toc-close { order: 1; margin-left: auto; }
 
 .book-title-short {
   font-family: var(--font-family);
   font-size: 0.8rem; font-style: italic;
   color: var(--text2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  flex: 1;
+  flex: 1 1 70%; min-width: 0;
 }
 
 .chapter-generate-card {

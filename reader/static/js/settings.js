@@ -186,6 +186,7 @@ async function loadSettings() {
   setNumber('export-outro-template', _settings.export_outro_template || '');
   setNumber('abs-url', _settings.abs_url || '');
   setNumber('abs-api-token', _settings.abs_api_token || '');
+  setNumber('api-token', _settings.api_token || '');
   if (_settings.abs_library_id) {
     const select = document.getElementById('abs-library');
     if (select && ![...select.options].some(o => o.value === _settings.abs_library_id)) {
@@ -225,11 +226,8 @@ function selectTheme(theme, persist = true) {
   document.querySelectorAll('.theme-swatch').forEach(el => {
     el.classList.toggle('active', el.dataset.theme === theme);
   });
-  // Apply immediately to body
-  ['night', 'sepia', 'paper', 'amoled'].forEach(t =>
-    document.body.classList.remove('theme-' + t)
-  );
-  if (theme !== 'night') document.body.classList.add('theme-' + theme);
+  // Apply immediately
+  Auris.applyTheme(theme);
   if (persist) {
     localStorage.setItem('theme', theme);
     markSettingsDirty();
@@ -444,13 +442,13 @@ async function checkPath() {
   });
   const d = await r.json();
   if (!d.exists) {
-    hint.textContent = 'Path does not exist.';
+    hint.textContent = 'A megadott mappa nem létezik.';
     hint.className = 'status-hint status-error';
   } else if (!d.has_config) {
-    hint.textContent = 'Directory exists but no config.json found.';
+    hint.textContent = 'A mappa létezik, de nincs benne config.json – ez nem modellmappa.';
     hint.className = 'status-hint status-warn';
   } else {
-    hint.textContent = 'Valid model directory.';
+    hint.textContent = 'Érvényes modellmappa.';
     hint.className = 'status-hint status-ok';
   }
 }
@@ -465,13 +463,13 @@ async function checkHiggsPath() {
   });
   const d = await r.json();
   if (!d.exists) {
-    hint.textContent = 'Path does not exist.';
+    hint.textContent = 'A megadott mappa nem létezik.';
     hint.className = 'status-hint status-error';
   } else if (!d.has_config) {
-    hint.textContent = 'Directory exists but no config.json found.';
+    hint.textContent = 'A mappa létezik, de nincs benne config.json – ez nem modellmappa.';
     hint.className = 'status-hint status-warn';
   } else {
-    hint.textContent = 'Valid model directory.';
+    hint.textContent = 'Érvényes modellmappa.';
     hint.className = 'status-hint status-ok';
   }
 }
@@ -482,7 +480,7 @@ async function startDownload() {
   const repo = document.getElementById('model-repo').value.trim();
   const dest = document.getElementById('dl-dest').value.trim();
   const hfep = document.getElementById('hf-endpoint').value.trim();
-  if (!dest) { alert('Please enter a download destination path.'); return; }
+  if (!dest) { Auris.toast('Add meg, hova töltődjön le a modell.', 'err'); return; }
 
   document.getElementById('dl-progress-wrap').classList.remove('hidden');
   document.getElementById('dl-btn').disabled = true;
@@ -700,6 +698,7 @@ async function saveSettingsValues() {
     export_outro_template: document.getElementById('export-outro-template')?.value || '',
     abs_url: (document.getElementById('abs-url')?.value || '').trim(),
     abs_api_token: document.getElementById('abs-api-token')?.value || '',
+    api_token: document.getElementById('api-token')?.value || '',
     abs_library_id: document.getElementById('abs-library')?.value || '',
     abs_folder_id: document.getElementById('abs-library')?.selectedOptions?.[0]?.dataset.folder || '',
     piper_voice:      document.getElementById('piper-voice')?.value || 'anna',
@@ -754,7 +753,7 @@ async function saveSettings(apply = false) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return Auris.esc(s || '');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -767,6 +766,12 @@ showSettingsCategory(
     ? initialSettingsCategory : 'speech',
   false
 );
+// First visit: open the quick setup instead of the engine details.
+if (!initialSettingsCategory && document.querySelector('[data-settings-category="setup"]')) {
+  fetch('/api/setup/status').then(r => r.json()).then(status => {
+    if (!status.completed && !location.hash) showSettingsCategory('setup', false);
+  }).catch(() => {});
+}
 loadSettings().catch(error => {
   document.getElementById('save-hint').textContent = 'A beállítások nem tölthetők be. Frissítsd az oldalt. ' + error.message;
 });

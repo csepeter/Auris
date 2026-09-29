@@ -9,6 +9,7 @@
         <a href="#overview" class="active">Áttekintés</a>
         <a href="#auris">Auris funkciók</a>
         <a href="#workflow">Munkafolyamat</a>
+        <a href="#production">Produkció és felület</a>
         <a href="#speaker-review">Szereplők ellenőrzése</a>
         <a href="#llm-detection">Helyi LLM felismerés</a>
         <a href="#text-editing">Szöveg és felolvasási ritmus</a>
@@ -23,6 +24,7 @@
         <a href="#export">Export és gyorsítótár</a>
         <a href="#publishing">Kiadási csomagok</a>
         <a href="#assist">Nyelvi modelles segéd és kiejtés</a>
+        <a href="#automation">Parancssor, API, Docker</a>
         <a href="#storage">Tárhely és mentés</a>
         <a href="#versioning">Verzió és frissítés</a>
         <a href="#performance">Teljesítmény</a>
@@ -448,6 +450,62 @@
       <p>Minden blokk alatt külön nyitható a <strong>Felolvasás finomhangolása</strong>. A tempó 0,5–2×, a blokk utáni szünet 0–5000 ms lehet. Üres mezőnél automatikus érték érvényes; a 0 ms kifejezetten kikapcsolja a hozzáadott szünetet. A modell által a hangon belül létrehozott csendet ez nem távolítja el. A szünetek a lejátszás és az export közös idővonalába kerülnek.</p>
       <p>Az <strong>Előnézet narrátorhanggal</strong> legfeljebb 1500 karakteres blokkot olvas fel, a beállított záró szünettel. Ehhez a hangmodellnek betöltve kell lennie. A szereplőhangokat a rendes lejátszásban ellenőrizd. A tempó modellutasítás: OmniVoice alatt működik, Higgs alatt a kifejező mód alkalmazza; a Higgs nyers módjában a tempómező nem használható. A pontos megszólalás a modelltől függ.</p>
       <p>A szerkezeti és időzítési beállítások külön adatok, nem a felolvasandó szövegbe írt vezérlőkódok. Ebben a változatban nincs automatikus LLM-alapú rendezés vagy új, blokkonkénti hangulat- és hangsúlyszerkesztő.</p>
+    </section>
+
+    <section class="docs-section" id="production">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">UI</span>
+        <div>
+          <h2>Produkció oldal, lejátszó és felület</h2>
+          <p>A könyv minden munkafázisa egy helyről indítható; a felület telefonon is használható, és telepíthető alkalmazásként is fut.</p>
+        </div>
+      </div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Produkció</h3>
+          <p>A Könyvtár kártyáin, illetve az olvasó bal sávjában a <strong>Produkció</strong> gomb nyitja meg. Egy képernyőn látszik:</p>
+          <ul class="docs-check-list">
+            <li>a lépéssor (Import → Szereplők → Hangok → Generálás → Ellenőrzés → Export) a kész lépések jelölésével;</li>
+            <li>az elkészült szakaszok száma, a kész hang hossza, az ellenőrzés állása és a beszédmotor állapota;</li>
+            <li>fejezetenként a hang készültsége, hossza és az ellenőrzés eredménye (rendben / gyanús / hibás), fejezetenkénti <strong>Generálás</strong> és <strong>Ellenőrzés</strong> gombbal;</li>
+            <li>a szereposztás: kinek van saját referenciahangja, és kit szólaltat meg hangleírás.</li>
+          </ul>
+          <p>A <strong>Teljes könyv generálása</strong> az összes hiányzó hangot egy menetben, fejezethatárokon átívelő GPU-csomagokban készíti el. Az export gombok (M4B, felolvasós EPUB3, Audiobookshelf, kiadói csomag) nyitó és záró szöveggel vagy anélkül indíthatók. A futó feladat állása élőben frissül.</p>
+        </div>
+        <div>
+          <h3>Lejátszó és billentyűk</h3>
+          <ul class="docs-check-list">
+            <li>Az idősáv a fejezet eltelt és teljes idejét mutatja; húzással bárhová lehet ugrani.</li>
+            <li>A lejátszási sebességet az Auris megjegyzi.</li>
+            <li><kbd>J</kbd> / <kbd>L</kbd>: 15 másodperc vissza / előre; <kbd>[</kbd> / <kbd>]</kbd>: lassabb / gyorsabb; a lejátszógombokon állva is működik.</li>
+            <li>A mondatok billentyűzettel is bejárhatók: <kbd>Tab</kbd> a szövegbe, <kbd>↑</kbd> / <kbd>↓</kbd> a mondatok között, <kbd>Enter</kbd> lejátssza.</li>
+            <li>A telefon zárolt képernyőjén és a médiagombokon a könyv borítója, címe és szerzője látszik.</li>
+          </ul>
+          <h3>Offline hallgatás és telepítés</h3>
+          <p>A böngésző menüjében az Auris <strong>telepíthető alkalmazásként</strong>. A már meghallgatott vagy legenerált hangrészeket a böngésző megőrzi (legfeljebb kb. 800 részt), így ezek szerver nélkül is lejátszhatók. Az új hang készítéséhez és a módosításokhoz az Auris szervernek futnia kell.</p>
+        </div>
+      </div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Hangstúdió</h3>
+          <ul class="docs-check-list">
+            <li>Minden szereplőnél látható a <strong>Meghallgatás</strong> gomb és egy kis lejátszó; a <strong>Próba mentése</strong> a már elkészült hangot tölti le, nem generál újat.</li>
+            <li>A hang leírása magyarul látszik (pl. <em>Férfi · idős · mély hang</em>); az angol technikai leírás a <strong>Technikai leírás</strong> alatt.</li>
+            <li><strong>Felvétel mikrofonnal:</strong> legfeljebb 30 másodperces referencia rögzíthető, a csend automatikusan levágódik (csúszkával igazítható), és feltöltés előtt meghallgatható. A feltöltött referencia is visszajátszható.</li>
+            <li><strong>Összehasonlítás:</strong> legfeljebb három mentett hangprofil és a jelenlegi hang ugyanazon a mondaton, egymás mellett; az <strong>Ezt választom</strong> alkalmazza.</li>
+            <li>Jelvény mutatja, ki szól automatikus hangon, saját referenciával vagy mentett profillal; rendezés megszólalások száma vagy név szerint; több szereplőre egyszerre alkalmazható profil.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Könyvtár és Feladatok</h3>
+          <ul class="docs-check-list">
+            <li>Borító nélküli könyv a címéből és szerzőjéből készült, színes betűborítót kap.</li>
+            <li>A kártyákon látszik az olvasás és a hang készültsége, és innen nyílik az olvasó, a Hangstúdió, az Ellenőrzés és a Produkció.</li>
+            <li>Nyelvi modell nélkül a <strong>Szereplőhangok</strong> import-mód le van tiltva, magyarázattal és a beállítás linkjével. Ha a könyv már szerepel a könyvtárban, a figyelmeztetés megnevezi és megnyitja a meglévőt.</li>
+            <li>A <strong>Feladatok</strong> oldal magyar feladatnevekkel, időpontokkal, időtartammal, szűrőkkel (Aktív / Kész / Hibás / Mind), leállítással, folytatással és letöltési linkekkel mutatja a munkát. Az oldalak egyetlen szerveresemény-csatornán frissülnek, nem kérdezgetnek másodpercenként.</li>
+          </ul>
+        </div>
+      </div>
     </section>
 
     <section class="docs-section" id="hungarian-text">
@@ -1092,6 +1150,32 @@ ffprobe -version</code></pre>
           <p>A Beállítások → Kiejtési szótár <strong>Ellenőrzésre javasolt szavak</strong> listája könyvenként kigyűjti a neveket, helyeket és idegen írásképű szavakat (HuSpaCy-val, ha telepítve van).</p>
         </div>
       </div>
+    </section>
+
+    <section class="docs-section" id="automation">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">CLI</span>
+        <div>
+          <h2>Parancssor, OpenAI-kompatibilis API és Docker</h2>
+          <p>Kötegelt munkához és más programokkal való együttműködéshez.</p>
+        </div>
+      </div>
+      <h3>Parancssor</h3>
+      <p>A <code>reader</code> mappából, a projekt környezetével. A parancsok a futó Aurishoz kapcsolódnak (<code>--server</code>, alapból <code>http://127.0.0.1:7860</code>); a <code>--start</code> kapcsolóval a parancssor maga indítja el az Aurist, ha nem fut.</p>
+      <div class="code-block">
+        <div class="code-block-head"><span>PowerShell</span></div>
+        <pre><code>.venv\Scripts\python.exe auris_cli.py --start import konyv.epub --mode single
+.venv\Scripts\python.exe auris_cli.py books
+.venv\Scripts\python.exe auris_cli.py qa 3
+.venv\Scripts\python.exe auris_cli.py export 3 --format m4b --intro --outro
+.venv\Scripts\python.exe auris_cli.py export 3 --package epub3 --chapters 1-5
+.venv\Scripts\python.exe auris_cli.py speak "Jó napot!" --voice Mesélő -o hang.mp3</code></pre>
+      </div>
+      <p>A hosszú műveletek a Feladatok oldalon is látszanak, és ott le is állíthatók.</p>
+      <h3>OpenAI-kompatibilis felolvasás</h3>
+      <p>A <code>POST /v1/audio/speech</code> végpont az OpenAI kérésformátumát fogadja (<code>input</code>, <code>voice</code>, <code>response_format</code>: mp3, wav, opus, flac, aac, pcm; <code>speed</code>). Így más programok (például OpenReader, Pandrator) az aktív Auris-motorral és a mentett magyar hangprofilokkal beszélhetnek. A <code>voice</code> lehet mentett hangprofil neve vagy azonosítója, hangleírás (<code>female, middle-aged</code>) vagy beépített hang (<code>anna</code>, <code>F1</code>). A <code>GET /v1/models</code> a motorokat, a <code>GET /v1/audio/voices</code> a hangprofilokat listázza. Alapból csak erről a gépről érhető el; kulcs a Beállítások → Kiadás és Audiobookshelf alatt adható meg (<code>Authorization: Bearer …</code>).</p>
+      <h3>Docker</h3>
+      <p>A projekt gyökerében: <code>docker compose up -d</code>, majd <code>http://localhost:7860</code>. NVIDIA GPU-hoz az NVIDIA Container Toolkit szükséges; GPU nélküli géphez a <code>docker-compose.yml</code>-ban állítsd a <code>TORCH_VARIANT</code> értékét <code>cpu</code>-ra és töröld a <code>deploy</code> részt. A könyvtár, a modellek, az exportok és a gyorsítótár a <code>docker-data</code> mappába kerülnek, így a konténer újraépítése után is megmaradnak. Ha a helyi hálózatról más gépnévvel éred el, add hozzá az <code>AURIS_ALLOWED_HOSTS</code> változóhoz, és a portot ne csak a <code>127.0.0.1</code>-hez kösd.</p>
     </section>
 
     <section class="docs-section" id="storage">

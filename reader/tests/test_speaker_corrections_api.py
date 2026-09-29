@@ -314,7 +314,7 @@ class SpeakerCorrectionsApiTest(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("range", response.get_json()["error"].lower())
+        self.assertIn("tartomány", response.get_json()["error"].lower())
 
     def test_reader_contains_speaker_editor(self):
         response = self.client.get("/reader/1")

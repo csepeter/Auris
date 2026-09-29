@@ -1,12 +1,6 @@
 const sx = (id) => document.getElementById(id);
 function sxEscape(v) {
-  return String(v ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ],
-  );
+  return Auris.esc(v);
 }
 async function sxApi(url, data, method = "POST") {
   const r = await fetch(
@@ -263,7 +257,11 @@ async function runScheduledBackup() {
   } catch (error) { sx('backup-schedule-message').textContent = error.message; sx('backup-run-now').disabled = false; }
 }
 loadBackupSchedule();
-setInterval(loadBackupSchedule, 5000);
+// Refresh only while the storage tab is visible (no background polling).
+setInterval(() => {
+  const panel = document.getElementById('settings-storage');
+  if (panel && !panel.hidden && document.visibilityState === 'visible') loadBackupSchedule();
+}, 5000);
 
 async function loadPronunciationCandidates() {
   const id = sx("dictionary-book").value;

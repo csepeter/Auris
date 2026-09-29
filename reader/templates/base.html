@@ -5,13 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}Auris{% endblock %}</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1c1a18">
+<script>
+/* Apply the theme before the first paint (no dark flash on light themes). */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (!t && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) t = 'paper';
+  if (t && t !== 'night') document.documentElement.classList.add('theme-' + t);
+})();
+</script>
 <link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/css/tokens.css">
 <link rel="stylesheet" href="/static/css/experience.css">
 {% block head %}{% endblock %}
 </head>
 <body>
-<nav class="topnav">
-  <a class="brand" href="/">Auris<span class="brand-sub">Reader</span></a>
+<a class="skip-link" href="#main-content">Ugrás a tartalomra</a>
+<nav class="topnav" aria-label="Fő navigáció">
+  <a class="brand" href="/">Auris<span class="brand-sub">hangoskönyv</span></a>
   <span class="nav-links">
     <a href="/" id="nav-library"{% if request.path == '/' %} class="active"{% endif %}>Könyvtár</a>
     <a href="/jobs"{% if request.path == '/jobs' %} class="active"{% endif %}>Feladatok</a>
@@ -20,38 +33,52 @@
     <span id="model-badge" class="badge badge-loading" role="status" aria-live="polite">Ellenőrzés…</span>
   </span>
 </nav>
+<div id="main-content" tabindex="-1"></div>
 {% block content %}{% endblock %}
+<script>window.AURIS_I18N = {{ i18n|tojson }};</script>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/icons.js"></script>
 <script>
-(function applyTheme() {
-  const t = localStorage.getItem('theme') || 'night';
-  if (t !== 'night') document.body.classList.add('theme-' + t);
-})();
-
-async function pollModelStatus() {
+/* One server-sent event stream replaces per-page polling. Pages subscribe
+   with Auris.onEvent('engine' | 'jobs', handler). */
+(function () {
   const badge = document.getElementById('model-badge');
-  if (!badge) return;
-  try {
-    const r = await fetch('/api/tts/status');
-    const s = await r.json();
+  const listeners = {engine: [], jobs: []};
+  Auris.onEvent = (name, handler) => { (listeners[name] = listeners[name] || []).push(handler); };
+  function showEngine(s) {
+    if (!badge) return;
     badge.className = 'badge';
+    badge.title = '';
     if (s.state === 'ready') {
-      badge.textContent = 'Hang kész';
+      badge.textContent = s.generating ? 'Beszédmotor dolgozik…' : 'Beszédmotor kész';
       badge.classList.add('badge-ready');
     } else if (s.state === 'loading') {
-      badge.textContent = 'Modell betöltése';
+      badge.textContent = 'Beszédmotor betöltése…';
       badge.classList.add('badge-loading');
     } else if (s.state === 'error') {
-      badge.textContent = 'Hanghiba';
+      badge.textContent = 'Beszédmotor-hiba';
       badge.classList.add('badge-error');
       badge.title = s.message || '';
     } else {
-      badge.textContent = s.model_exists ? 'Hang készenlétben' : 'Modell hiányzik';
-      badge.classList.add(s.model_exists ? 'badge-idle' : 'badge-error');
+      badge.textContent = s.model_exists === false ? 'Modell hiányzik' : 'Beszédmotor: nincs betöltve';
+      badge.classList.add(s.model_exists === false ? 'badge-error' : 'badge-idle');
     }
-  } catch(e) { /* ignore */ }
-  setTimeout(pollModelStatus, 3000);
+  }
+  Auris.onEvent('engine', showEngine);
+  function dispatch(name, data) { (listeners[name] || []).forEach((fn) => { try { fn(data); } catch (_) {} }); }
+  if (window.EventSource) {
+    const source = new EventSource('/api/events');
+    ['engine', 'jobs'].forEach((name) => source.addEventListener(name, (e) => dispatch(name, JSON.parse(e.data))));
+  } else {
+    (async function poll() {
+      try { dispatch('engine', await fetch('/api/tts/status').then((r) => r.json())); } catch (_) {}
+      setTimeout(poll, 3000);
+    })();
+  }
+})();
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch(() => {}));
 }
-pollModelStatus();
 </script>
 {% block scripts %}{% endblock %}
 </body>

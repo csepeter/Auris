@@ -133,6 +133,8 @@ DEFAULTS: dict = {
     'abs_api_token': '',
     'abs_library_id': '',
     'abs_folder_id': '',
+    # Optional bearer token for the OpenAI-compatible /v1 speech API
+    'api_token': '',
     # Quality control (core/qa.py): character error rate thresholds
     'qa_cer_warn': 0.08,
     'qa_cer_fail': 0.15,

@@ -8,12 +8,9 @@ import numpy as np
 from core.tts_engine import (
     TTSEngine,
     apply_text_normalization,
-    _coalesce_pending_items,
     _num2words_fallback,
     _pack_items_for_batch,
     _prompt_cache_key,
-    _split_audio_by_char_weights,
-    _tts_coalesce_chars_from_settings,
 )
 
 
@@ -311,42 +308,7 @@ class AccelResolveTest(unittest.TestCase):
         )
 
 
-class CoalesceTest(unittest.TestCase):
-    def test_coalesce_merges_same_voice(self):
-        pending = [
-            {
-                "idx": i,
-                "text": f"Mondat {i}.",
-                "instruct": "male",
-                "ref_audio": "a.wav",
-                "ref_text": "r",
-                "speed": 1.0,
-                "language": "hu",
-                "normalize_text": False,
-                "cache_key": f"k{i}",
-                "cache_path": f"p{i}.wav",
-            }
-            for i in range(5)
-        ]
-        units = _coalesce_pending_items(pending, max_chars=80)
-        self.assertLess(len(units), 5)
-        self.assertEqual(sum(len(u["members"]) for u in units), 5)
-
-    def test_split_audio_weights(self):
-        audio = np.arange(100, dtype=np.float32)
-        parts = _split_audio_by_char_weights(audio, ["aa", "aaaa", "aaaaaa"])
-        self.assertEqual(len(parts), 3)
-        self.assertEqual(sum(len(p) for p in parts), 100)
-
-
 class GenerateManyBatchTest(unittest.TestCase):
-    def test_exact_line_boundaries_disable_waveform_coalescing(self):
-        with patch('core.settings.get', return_value=1000):
-            self.assertEqual(
-                _tts_coalesce_chars_from_settings(),
-                0,
-            )
-
     def test_same_voice_items_are_batched(self):
         engine = TTSEngine()
         model = _FakeModel()
@@ -382,9 +344,6 @@ class GenerateManyBatchTest(unittest.TestCase):
                 "core.tts_engine.VOICE_PROMPT_DIR", prompts_dir
             ), patch(
                 "core.tts_engine._normalize_text_enabled", return_value=False
-            ), patch(
-                "core.tts_engine._tts_coalesce_chars_from_settings",
-                return_value=0,
             ):
                 results = engine.generate_many(items, num_step=16, batch_size=4)
 

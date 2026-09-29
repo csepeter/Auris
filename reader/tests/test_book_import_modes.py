@@ -72,7 +72,7 @@ class BookImportModesTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("language-model URL", response.get_json()["error"])
+        self.assertIn("nyelvi modell címét", response.get_json()["error"])
         with database.get_conn() as conn:
             count = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
         self.assertEqual(count, 0)

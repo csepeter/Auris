@@ -1,15 +1,9 @@
 // Quality-control page: run checks, review flagged sentences, pick takes.
 (() => {
   const BOOK_ID = window.BOOK_ID;
-  const FLAG_LABELS = {
-    clipping: "túlvezérelt",
-    long_pause: "hosszú szünet",
-    silent: "néma",
-    too_fast: "túl gyors / levágott",
-    too_slow: "túl lassú / elnyújtott",
-    duration_outlier: "szokatlan hossz",
-  };
-  const STATUS_LABELS = { ok: "Rendben", warn: "Gyanús", fail: "Hibás", unchecked: "Nincs ellenőrizve" };
+  const t = window.Auris.t;
+  const FLAG_LABELS = new Proxy({}, { get: (_, flag) => t(`qa_flag.${String(flag)}`, String(flag)) });
+  const STATUS_LABELS = new Proxy({}, { get: (_, key) => t(`qa.${String(key)}`, String(key)) });
   let filter = "problems";
   let segments = [];
   let pollTimer = null;

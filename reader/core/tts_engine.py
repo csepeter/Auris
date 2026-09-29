@@ -194,99 +194,6 @@ def _tts_batch_max_chars_from_settings(batch_size: int | None = None) -> int:
     return max(500, min(value, 40000))
 
 
-def _tts_coalesce_chars_from_settings() -> int:
-    # Character-proportional splitting cannot recover exact spoken boundaries
-    # from a merged waveform. Keep synthesis units independent; batching still
-    # provides GPU throughput without mixing neighboring lines.
-    return 0
-
-
-def _coalesce_pending_items(pending: list[dict], max_chars: int) -> list[dict]:
-    """Merge consecutive same-voice pending items into longer synth units.
-
-    Each returned dict has the usual synth fields plus:
-      members: original pending dicts (preserve idx/cache paths)
-    """
-    if max_chars <= 0 or len(pending) <= 1:
-        return [{**it, "members": [it]} for it in pending]
-
-    groups: list[dict] = []
-    cur: dict | None = None
-
-    def _voice_key(it: dict) -> tuple:
-        return (
-            it.get("instruct") or "",
-            it.get("ref_audio") or "",
-            it.get("ref_text") or "",
-            it.get("language") or "",
-            int(bool(it.get("normalize_text"))),
-            # Only merge identical speeds so timing stays consistent.
-            round(float(it.get("speed") or 1.0), 3),
-        )
-
-    for it in pending:
-        key = _voice_key(it)
-        text = it.get("text") or ""
-        if cur is None:
-            cur = {
-                "text": text,
-                "instruct": it.get("instruct"),
-                "ref_audio": it.get("ref_audio"),
-                "ref_text": it.get("ref_text"),
-                "speed": float(it.get("speed") or 1.0),
-                "language": it.get("language"),
-                "normalize_text": it.get("normalize_text"),
-                "members": [it],
-                "_key": key,
-            }
-            continue
-
-        joined_len = len(cur["text"]) + 1 + len(text)
-        if key == cur["_key"] and joined_len <= max_chars:
-            cur["text"] = f"{cur['text']} {text}".strip()
-            cur["members"].append(it)
-        else:
-            groups.append(cur)
-            cur = {
-                "text": text,
-                "instruct": it.get("instruct"),
-                "ref_audio": it.get("ref_audio"),
-                "ref_text": it.get("ref_text"),
-                "speed": float(it.get("speed") or 1.0),
-                "language": it.get("language"),
-                "normalize_text": it.get("normalize_text"),
-                "members": [it],
-                "_key": key,
-            }
-    if cur is not None:
-        groups.append(cur)
-    return groups
-
-
-def _split_audio_by_char_weights(audio: np.ndarray, texts: list[str]) -> list[np.ndarray]:
-    """Split a concatenated utterance into per-member clips by character weight."""
-    if not texts:
-        return []
-    if len(texts) == 1:
-        return [audio]
-    weights = [max(1, len(t or "")) for t in texts]
-    total_w = float(sum(weights))
-    n = int(audio.shape[0])
-    out: list[np.ndarray] = []
-    cursor = 0
-    for i, w in enumerate(weights):
-        if i == len(weights) - 1:
-            out.append(audio[cursor:])
-            break
-        take = int(round(n * (w / total_w)))
-        # Leave at least 1 sample for each remaining part.
-        remaining_parts = len(weights) - i - 1
-        take = max(1, min(take, n - cursor - remaining_parts))
-        out.append(audio[cursor : cursor + take])
-        cursor += take
-    return out
-
-
 def _cuda_mem_gb() -> tuple[float | None, float | None]:
     try:
         import torch
@@ -1506,18 +1413,16 @@ class TTSEngine:
             batch_size = _tts_batch_size_from_settings(voice_clone=any_voice_clone)
         batch_size = self._effective_batch_size(batch_size, voice_clone=any_voice_clone)
         max_chars = _tts_batch_max_chars_from_settings(batch_size)
-        coalesce_chars = _tts_coalesce_chars_from_settings()
         if num_step is None:
             num_step = _tts_num_step_from_settings()
         num_step = int(num_step)
         log.info(
             "generate_many: %d items, batch_size=%d (oom_cap=%s), max_chars=%d, "
-            "coalesce_chars=%d, num_step=%d, voice_clone=%s",
+            "num_step=%d, voice_clone=%s",
             len(items),
             batch_size,
             self._batch_size_cap,
             max_chars,
-            coalesce_chars,
             num_step,
             any_voice_clone,
         )
@@ -1598,14 +1503,9 @@ class TTSEngine:
         if not pending:
             return results  # type: ignore[return-value]
 
-        # Merge consecutive same-voice shorts into longer utterances, then batch those.
-        units = _coalesce_pending_items(pending, coalesce_chars)
-        log.info(
-            "Coalesce: %d pending segments → %d synth units (max_chars=%d)",
-            len(pending),
-            len(units),
-            coalesce_chars,
-        )
+        # Every spoken unit keeps its own waveform (exact line boundaries);
+        # throughput comes from batching units, never from merging text.
+        units = [{**it, "members": [it]} for it in pending]
 
         # Group by voice conditioning so one OmniVoice batch shares ref tokens.
         groups: dict[tuple, list[dict]] = {}
@@ -1685,26 +1585,16 @@ class TTSEngine:
                     normalize_text=bool(normalize_text),
                 )
                 for unit, audio in zip(sub, audios):
-                    members = unit.get("members") or [unit]
-                    member_texts = [m["text"] for m in members]
-                    parts = _split_audio_by_char_weights(audio, member_texts)
-                    if len(parts) != len(members):
-                        parts = [audio] + [
-                            np.zeros(1, dtype=audio.dtype) for _ in members[1:]
-                        ]
-                    for member, part in zip(members, parts):
-                        _write_audio_atomic(
-                            member["cache_path"], part, SAMPLE_RATE
-                        )
-                        _emit(
-                            member["idx"],
-                            {
-                                "audio_path": member["cache_path"],
-                                "duration_sec": len(part) / SAMPLE_RATE,
-                                "cache_hit": False,
-                                "cache_key": member["cache_key"],
-                            },
-                        )
+                    _write_audio_atomic(unit["cache_path"], audio, SAMPLE_RATE)
+                    _emit(
+                        unit["idx"],
+                        {
+                            "audio_path": unit["cache_path"],
+                            "duration_sec": len(audio) / SAMPLE_RATE,
+                            "cache_hit": False,
+                            "cache_key": unit["cache_key"],
+                        },
+                    )
 
         missing = [i for i, r in enumerate(results) if r is None]
         if missing:
@@ -1845,8 +1735,12 @@ class TTSExportPool:
         on_status=None,
     ) -> list[dict]:
         # Anchored design voices become clones, so they can use both lanes.
-        if hasattr(self.primary, "anchor_items"):
-            items = self.primary.anchor_items(items)
+        if getattr(self.primary, "engine_name", "omnivoice") == "omnivoice" and hasattr(
+            self.primary, "anchor_items"
+        ):
+            anchored = self.primary.anchor_items(items)
+            if isinstance(anchored, list):
+                items = anchored
         if not self.can_parallelize(items):
             return self.primary.generate_many(
                 items,

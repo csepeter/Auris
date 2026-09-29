@@ -70,7 +70,7 @@ class InteractiveTTSBatcher:
         if call.error is not None:
             raise call.error
         if call.result is None:
-            raise RuntimeError("Interactive TTS batch returned no result.")
+            raise RuntimeError("Az azonnali felolvasás nem adott eredményt.")
         return call.result
 
     def _finish(
@@ -115,7 +115,7 @@ class InteractiveTTSBatcher:
 
             if self._blocked is not None and self._blocked():
                 error = RuntimeError(
-                    "Export in progress — interactive TTS is paused until export finishes."
+                    "Export fut – az azonnali felolvasás az export végéig szünetel."
                 )
                 for call in batch:
                     self._finish(call, error=error)
@@ -172,7 +172,7 @@ class InteractiveTTSBatcher:
                             self._finish(
                                 call,
                                 error=RuntimeError(
-                                    "Interactive TTS batch did not complete this segment."
+                                    "Az azonnali felolvasás nem készítette el ezt a szakaszt."
                                 ),
                             )
 

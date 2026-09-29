@@ -207,17 +207,18 @@ function setCurrentSegment(idx, options = {}) {
 
 const THEMES = ['night', 'sepia', 'paper', 'amoled'];
 
+const THEME_LABELS = {night: 'Éjszakai', sepia: 'Szépia', paper: 'Papír', amoled: 'AMOLED'};
+
 function applyTheme(theme) {
-  THEMES.forEach(t => document.body.classList.remove('theme-' + t));
-  if (theme !== 'night') document.body.classList.add('theme-' + theme);
+  Auris.applyTheme(theme);
   currentTheme = theme;
-  localStorage.setItem('theme', theme);
+  try { localStorage.setItem('theme', theme); } catch (_) {}
 }
 
 function cycleTheme() {
   const next = THEMES[(THEMES.indexOf(currentTheme) + 1) % THEMES.length];
   applyTheme(next);
-  showToast('Theme: ' + next.charAt(0).toUpperCase() + next.slice(1));
+  showToast('Téma: ' + (THEME_LABELS[next] || next));
 }
 
 applyTheme(currentTheme);
@@ -280,6 +281,12 @@ async function loadTOC() {
   }).join('');
   renderExportChapterSelection();
 
+  // Links from the production and quality pages open a given chapter.
+  const linkedChapter = Number.parseInt(new URLSearchParams(location.search).get('chapter'), 10);
+  if (chapters.some(ch => ch.id === linkedChapter)) {
+    openChapter(linkedChapter, {resumePosition: 0, persistOpened: true, highlightOnLoad: false});
+    return;
+  }
   const prog = await fetch(`/api/books/${BOOK_ID}/progress`).then(r => r.json());
   const savedChapterId = Number.parseInt(prog.chapter_id, 10);
   const savedPosition = Number.parseInt(prog.position, 10);
@@ -431,7 +438,9 @@ function renderContent(segs) {
            ))}</span>
          </button>`
       : '';
-    const inlineEditor = canEditSpeaker
+    // Rendering a <select> with every character for every sentence costs
+    // thousands of DOM nodes; only speaker edit mode needs them.
+    const inlineEditor = canEditSpeaker && speakerEditMode
       ? `<select class="speaker-inline-select" aria-label="A mondat beszélője"
                  onclick="event.stopPropagation()"
                  onchange="quickAssignSpeaker(${i},this)">
@@ -442,7 +451,7 @@ function renderContent(segs) {
     const startsBlock = i === 0 || seg.block_index !== segs[i - 1]?.block_index;
     const headingAttr = heading && startsBlock ? ` role="heading" aria-level="${seg.block_kind === 'heading' ? 2 : 3}"` : '';
     return `<span class="${cls}${heading ? ' text-block-heading' : ''}" data-idx="${i}"${charAttr}${headingAttr}
-                  style="--speaker-color:${speakerColor}"
+                  style="--speaker-color:${speakerColor}" tabindex="${i === currentSegIdx ? 0 : -1}"
                   onclick="jumpTo(${i})">
               ${inlineEditor}${speakerLabel}<span class="sentence-text">${wordSpans}</span>
             </span>${seg.ends_paragraph ? '<span class="text-paragraph-break" aria-hidden="true"></span>' : ' '}`;
@@ -450,6 +459,8 @@ function renderContent(segs) {
 
   container.classList.toggle('speaker-edit-active', speakerEditMode);
   container.innerHTML = `<div class="chapter-text-flow">${html}</div>`;
+  _lastHighlightedIdx = null;
+  updateChapterTimeline();
 
   // Restore font prefs (font may be reset by innerHTML)
   container.style.fontSize   = fontSize + 'px';
@@ -1226,7 +1237,7 @@ function stopPlayback() {
   _preloadData = null;
   if (currentChapterId) queueProgressSave(currentChapterId, currentSegIdx);
   const btn = document.getElementById('btn-play');
-  btn.innerHTML = '&#9654;';
+  btn.innerHTML = Auris.icon('play');
   btn.classList.add('paused');
   document.getElementById('pb-character').textContent = '—';
   updatePlaybackUI();
@@ -1277,13 +1288,28 @@ function stopWordHighlight() {
 
 // ── Segment highlighting & auto-scroll ────────────────────────────────────────
 
+let _lastHighlightedIdx = null;
+
 function highlightSegment(idx, options = {}) {
   const behavior = options.behavior || 'smooth';
   _ignoreScrollTrackingUntil = Date.now() + (behavior === 'smooth' ? 700 : 150);
-  document.querySelectorAll('.sentence').forEach((el, i) => {
-    el.classList.toggle('playing', i === idx);
-    el.classList.toggle('spoken',  i < idx);
-  });
+  const sentences = document.querySelectorAll('.sentence');
+  if (_lastHighlightedIdx !== null && idx === _lastHighlightedIdx + 1 && sentences[idx]) {
+    // Normal playback advances by one: touch only the two affected nodes.
+    const previous = sentences[_lastHighlightedIdx];
+    previous.classList.remove('playing');
+    previous.classList.add('spoken');
+    previous.tabIndex = -1;
+    sentences[idx].classList.add('playing');
+    sentences[idx].tabIndex = 0;
+  } else {
+    sentences.forEach((el, i) => {
+      el.classList.toggle('playing', i === idx);
+      el.classList.toggle('spoken',  i < idx);
+      el.tabIndex = i === idx ? 0 : -1;
+    });
+  }
+  _lastHighlightedIdx = idx;
   const active = document.querySelector(`.sentence[data-idx="${idx}"]`);
   if (active) active.scrollIntoView({ behavior, block: 'center' });
 }
@@ -1303,11 +1329,11 @@ function updatePlaybackUI() {
   const btn  = document.getElementById('btn-play');
   const prog = document.getElementById('pb-progress');
   if (isPlaying) {
-    btn.innerHTML = '&#9646;&#9646;';
+    btn.innerHTML = Auris.icon('pause');
     btn.classList.remove('paused');
     btn.setAttribute('aria-label', 'Szünet');
   } else {
-    btn.innerHTML = '&#9654;';
+    btn.innerHTML = Auris.icon('play');
     btn.classList.add('paused');
     btn.setAttribute('aria-label', 'Lejátszás');
   }
@@ -1447,13 +1473,93 @@ document.getElementById('btn-prev-seg').onclick = () => {
 document.getElementById('btn-seek-back').onclick = () => seekAudioBy(-15);
 document.getElementById('btn-seek-forward').onclick = () => seekAudioBy(15);
 
-document.getElementById('speed-slider').oninput = function() {
-  speedMultiplier = parseFloat(this.value);
-  document.getElementById('speed-val').textContent = speedMultiplier.toFixed(1) + '×';
-  _audioA.playbackRate = speedMultiplier;
-  _audioB.playbackRate = speedMultiplier;
+function setPlaybackSpeed(value) {
+  const speed = Math.min(2, Math.max(0.5, Math.round(Number(value) * 10) / 10 || 1));
+  speedMultiplier = speed;
+  const slider = document.getElementById('speed-slider');
+  if (slider) slider.value = String(speed);
+  document.getElementById('speed-val').textContent = speed.toFixed(1) + '×';
+  _audioA.playbackRate = speed;
+  _audioB.playbackRate = speed;
+  try { localStorage.setItem('playbackSpeed', String(speed)); } catch (_) {}
   updateRemainingTime();
+}
+
+document.getElementById('speed-slider').oninput = function() {
+  setPlaybackSpeed(this.value);
 };
+try {
+  const savedSpeed = parseFloat(localStorage.getItem('playbackSpeed'));
+  if (Number.isFinite(savedSpeed) && savedSpeed !== 1) setPlaybackSpeed(savedSpeed);
+} catch (_) {}
+
+// ── Chapter timeline (elapsed / total, seekable) ──────────────────────────────
+
+function segmentSeconds(seg) {
+  const duration = Number(seg?.duration_sec);
+  if (Number.isFinite(duration) && duration > 0) return duration;
+  const words = String(seg?.text || '').trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(0.5, words * 0.4);
+}
+
+function chapterStarts() {
+  const starts = [];
+  let cursor = 0;
+  segments.forEach((seg) => { starts.push(cursor); cursor += segmentSeconds(seg); });
+  return { starts, total: cursor };
+}
+
+function formatClock(seconds) {
+  const s = Math.max(0, Math.round(seconds || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
+let _timelineDragging = false;
+
+function updateChapterTimeline() {
+  const range = document.getElementById('chapter-timeline');
+  if (!range || _timelineDragging || !segments.length) return;
+  const { starts, total } = chapterStarts();
+  const offset = _loadedSegIdx === currentSegIdx ? Number(audio.currentTime) || 0 : 0;
+  const elapsed = (starts[currentSegIdx] || 0) + offset;
+  range.max = String(Math.max(1, Math.round(total)));
+  range.value = String(Math.round(elapsed));
+  range.setAttribute('aria-valuetext', `${formatClock(elapsed)} / ${formatClock(total)}`);
+  document.getElementById('chapter-time-elapsed').textContent = formatClock(elapsed);
+  document.getElementById('chapter-time-total').textContent = formatClock(total);
+}
+
+function seekChapterTo(seconds) {
+  if (!segments.length) return;
+  const { starts } = chapterStarts();
+  let idx = 0;
+  while (idx + 1 < starts.length && starts[idx + 1] <= seconds) idx += 1;
+  const offset = Math.max(0, seconds - starts[idx]);
+  const seg = segments[idx];
+  _savedAudioResume = {chapterId: currentChapterId, index: idx, offset, cacheKey: seg?.cache_key};
+  if (isPlaying) playSegment(idx);
+  else setCurrentSegment(idx, { highlight: true, save: true });
+  updateChapterTimeline();
+}
+
+(() => {
+  const range = document.getElementById('chapter-timeline');
+  if (!range) return;
+  range.addEventListener('input', () => {
+    _timelineDragging = true;
+    document.getElementById('chapter-time-elapsed').textContent = formatClock(Number(range.value));
+  });
+  range.addEventListener('change', () => {
+    _timelineDragging = false;
+    seekChapterTo(Number(range.value));
+  });
+  [_audioA, _audioB].forEach((el) => el.addEventListener('timeupdate', () => {
+    if (el === audio) updateChapterTimeline();
+  }));
+})();
 
 function clearSleepTimer() {
   if (_sleepTimerId) clearTimeout(_sleepTimerId);
@@ -1502,10 +1608,14 @@ function toggleBookmarkPanel() {
 
 function updateMediaSessionMetadata(chapterTitle) {
   if (!('mediaSession' in navigator) || !('MediaMetadata' in window)) return;
+  const artwork = window.BOOK_COVER_URL
+    ? [{src: window.BOOK_COVER_URL, sizes: '512x512', type: 'image/jpeg'}]
+    : [{src: '/static/favicon.svg', sizes: 'any', type: 'image/svg+xml'}];
   navigator.mediaSession.metadata = new MediaMetadata({
     title: chapterTitle || window.BOOK_TITLE,
     album: window.BOOK_TITLE,
-    artist: 'Auris',
+    artist: window.BOOK_AUTHOR || 'Auris',
+    artwork,
   });
 }
 
@@ -1579,467 +1689,6 @@ function scheduleViewportProgressUpdate() {
   _scrollProgressTimer = setTimeout(updateProgressFromViewport, 120);
 }
 
-// ── Whole-book search ────────────────────────────────────────────────────────
-
-function openBookSearch() {
-  const overlay = document.getElementById('book-search-overlay');
-  openModal(overlay, document.getElementById('book-search-input'));
-}
-
-function closeBookSearch() {
-  closeModal(document.getElementById('book-search-overlay'));
-}
-
-async function searchBook(query) {
-  const status = document.getElementById('book-search-status');
-  const list = document.getElementById('book-search-results');
-  const normalized = String(query || '').trim();
-  if (normalized.length < 2) {
-    status.textContent = 'Adj meg legalább két karaktert.';
-    list.replaceChildren();
-    return;
-  }
-
-  status.textContent = 'Keresés…';
-  list.replaceChildren();
-  try {
-    const response = await fetch(`/api/books/${BOOK_ID}/search?q=${encodeURIComponent(normalized)}`);
-    const results = await response.json();
-    if (!response.ok) throw new Error(results.error || 'A keresés nem sikerült.');
-    status.textContent = results.length ? `${results.length} találat` : 'Nincs találat.';
-    results.forEach(result => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'search-result';
-      const title = document.createElement('span');
-      title.className = 'search-result-title';
-      title.textContent = result.chapter_title || 'Névtelen fejezet';
-      const excerpt = document.createElement('span');
-      excerpt.className = 'search-result-excerpt';
-      excerpt.textContent = result.excerpt || '';
-      button.append(title, excerpt);
-      button.addEventListener('click', () => {
-        closeBookSearch();
-        openChapter(Number(result.chapter_id), {
-          resumePosition: Number(result.segment_index) || 0,
-          persistCurrent: true,
-          persistOpened: true,
-          highlightOnLoad: true,
-        });
-      });
-      list.appendChild(button);
-    });
-  } catch (error) {
-    status.textContent = error.message;
-  }
-}
-
-document.getElementById('book-search-btn').addEventListener('click', openBookSearch);
-document.getElementById('book-search-close').addEventListener('click', closeBookSearch);
-document.getElementById('book-search-overlay').addEventListener('click', event => {
-  if (event.target === event.currentTarget) closeBookSearch();
-});
-document.getElementById('book-search-form').addEventListener('submit', event => {
-  event.preventDefault();
-  searchBook(document.getElementById('book-search-input').value);
-});
-
-// ── Bookmarks ─────────────────────────────────────────────────────────────────
-
-let _bookmarks = [];
-
-async function loadBookmarks() {
-  _bookmarks = await fetch(`/api/books/${BOOK_ID}/bookmarks`).then(r => r.json());
-  renderBookmarks();
-}
-
-function renderBookmarks() {
-  const list = document.getElementById('bookmark-list');
-  if (!_bookmarks.length) {
-    list.innerHTML = '<div style="padding:16px;font-size:.8rem;color:var(--text3);font-style:italic">Még nincs könyvjelző.</div>';
-    return;
-  }
-  list.innerHTML = _bookmarks.map(bm => `
-    <div class="bookmark-item">
-      <button class="bookmark-goto" type="button" onclick="gotoBookmark(${bm.chapter_id}, ${bm.segment_index})">
-        <span class="bookmark-text">${esc(bm.text_excerpt || bm.label || '(nincs részlet)')}</span>
-        <span class="bookmark-loc">${esc(bm.chapter_title || '')} &middot; ${bm.segment_index + 1}. szakasz</span>
-      </button>
-      <button class="bookmark-del" aria-label="Könyvjelző törlése" onclick="removeBookmark(event,${bm.id})">&times;</button>
-    </div>`).join('');
-}
-
-async function addBookmark() {
-  if (!currentChapterId) { showToast('Előbb nyiss meg egy fejezetet.'); return; }
-  const seg = segments[currentSegIdx];
-  const excerpt = seg ? seg.text.slice(0, 120) : '';
-  const r = await fetch(`/api/books/${BOOK_ID}/bookmarks`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      chapter_id:    currentChapterId,
-      segment_index: currentSegIdx,
-      text_excerpt:  excerpt,
-    }),
-  });
-  if (r.ok) {
-    showToast('Könyvjelző hozzáadva.');
-    loadBookmarks();
-    const btn = document.getElementById('bookmark-btn');
-    btn.textContent = '★';
-    setTimeout(() => { btn.textContent = '☆'; }, 1500);
-  }
-}
-
-async function removeBookmark(e, id) {
-  e.stopPropagation();
-  await fetch(`/api/books/${BOOK_ID}/bookmarks/${id}`, { method: 'DELETE' });
-  loadBookmarks();
-}
-
-function gotoBookmark(chapterId, segIdx) {
-  if (chapterId !== currentChapterId) {
-    openChapter(chapterId, {
-      resumePosition: segIdx,
-      persistCurrent: true,
-      persistOpened: true,
-      highlightOnLoad: true,
-    });
-  } else {
-    jumpTo(segIdx);
-  }
-}
-
-// ── Export ────────────────────────────────────────────────────────────────────
-
-// Pause reader TTS prewarm/buffer while an export owns the GPU.
-let _exportBusy = false;
-
-function formatDurationShort(sec) {
-  if (sec == null || !Number.isFinite(sec) || sec < 0) return '';
-  const s = Math.round(sec);
-  if (s < 60) return `${s} mp`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  if (m < 60) return `${m} p ${String(r).padStart(2, '0')} mp`;
-  const h = Math.floor(m / 60);
-  return `${h} ó ${String(m % 60).padStart(2, '0')} p`;
-}
-
-function formatExportStatus(sr) {
-  if (!sr) return 'Feldolgozás…';
-  const done = typeof sr.done === 'number' ? sr.done : null;
-  const total = typeof sr.total === 'number' ? sr.total : null;
-  let msg = sr.message || 'Feldolgozás…';
-
-  // Always rebuild a clear progress line so a stale server message cannot hide ETA.
-  if (sr.state === 'running' && total != null && total > 0 && done != null) {
-    msg = `Hang készítése (${done}/${total})`;
-    if (sr.eta_sec != null && Number.isFinite(sr.eta_sec) && done < total) {
-      msg += ` · kb. ${formatDurationShort(sr.eta_sec)} van hátra`;
-    } else if (done < total) {
-      msg += ' · feldolgozás…';
-    }
-  } else if (
-    sr.state === 'running' &&
-    sr.eta_sec != null &&
-    Number.isFinite(sr.eta_sec) &&
-    !/hátra/i.test(msg)
-  ) {
-    msg += ` · kb. ${formatDurationShort(sr.eta_sec)} van hátra`;
-  }
-  return msg;
-}
-
-function renderExportChapterSelection() {
-  const list = document.getElementById('exp-chapter-list');
-  if (!list) return;
-  list.innerHTML = chapters.map((chapter, index) => `
-    <label>
-      <input type="checkbox" name="exp-chapter" value="${index + 1}" checked>
-      <span>${index + 1}. ${esc(chapter.title)}</span>
-    </label>
-  `).join('');
-}
-
-function setExportRadio(name, value) {
-  const input = document.querySelector(`input[name="${name}"][value="${value}"]`);
-  if (input) input.checked = true;
-}
-
-function updateExportScope() {
-  const selected = document.querySelector('input[name="exp-mode"]:checked').value;
-  document.getElementById('chapter-selection-wrap')
-    .classList.toggle('hidden', selected !== 'chapterwise');
-}
-
-function selectAllExportChapters(checked) {
-  document.querySelectorAll('input[name="exp-chapter"]')
-    .forEach(input => { input.checked = checked; });
-}
-
-function applyExportPreset(preset) {
-  if (preset === 'custom') return;
-  if (preset === 'chapter-wav') {
-    setExportRadio('exp-mode', 'chapter');
-    setExportRadio('exp-audio', 'wav');
-    setExportRadio('exp-sub', 'none');
-  } else if (preset === 'selected-mp3') {
-    setExportRadio('exp-mode', 'chapterwise');
-    setExportRadio('exp-audio', 'mp3');
-    setExportRadio('exp-sub', 'none');
-  } else if (preset === 'book-m4b') {
-    setExportRadio('exp-mode', 'chapterwise');
-    setExportRadio('exp-audio', 'm4b');
-    setExportRadio('exp-sub', 'none');
-    selectAllExportChapters(true);
-  } else if (preset === 'book-epub3') {
-    setExportRadio('exp-mode', 'chapterwise');
-    setExportRadio('exp-audio', 'mp3');
-    setExportRadio('exp-sub', 'none');
-    selectAllExportChapters(true);
-  } else if (preset === 'book-abs') {
-    setExportRadio('exp-mode', 'chapterwise');
-    setExportRadio('exp-audio', 'm4b');
-    setExportRadio('exp-sub', 'none');
-    selectAllExportChapters(true);
-  } else if (preset === 'book-acx') {
-    setExportRadio('exp-mode', 'chapterwise');
-    setExportRadio('exp-audio', 'mp3');
-    setExportRadio('exp-sub', 'none');
-    selectAllExportChapters(true);
-  } else if (preset === 'chapter-daw') {
-    setExportRadio('exp-mode', 'chapter');
-    setExportRadio('exp-audio', 'wav');
-    setExportRadio('exp-sub', 'none');
-  }
-  const packages = {
-    'book-epub3': 'epub3', 'book-abs': 'audiobookshelf', 'book-acx': 'acx', 'chapter-daw': 'daw',
-  };
-  const packageSelect = document.getElementById('export-package');
-  if (packageSelect) packageSelect.value = packages[preset] || 'none';
-  const intro = document.getElementById('export-intro');
-  const outro = document.getElementById('export-outro');
-  const sample = document.getElementById('export-sample');
-  const book = ['book-m4b', 'book-epub3', 'book-abs', 'book-acx'].includes(preset);
-  if (intro) intro.checked = book;
-  if (outro) outro.checked = book;
-  if (sample) sample.checked = preset === 'book-acx';
-  updateExportScope();
-}
-
-async function loadPublishingInfo() {
-  try {
-    const info = await fetch(`/api/books/${BOOK_ID}/publishing`).then(r => r.json());
-    const credit = document.getElementById('export-narrator-credit');
-    if (credit) credit.value = info.narrator_credit || '';
-    const name = document.getElementById('export-music-name');
-    if (name) name.textContent = info.bg_music_name ? `Háttérzene: ${info.bg_music_name}` : 'Nincs háttérzene';
-    const level = document.getElementById('export-music-db');
-    if (level) level.value = info.bg_music_db ?? -22;
-    const value = document.getElementById('export-music-db-value');
-    if (value) value.textContent = String(info.bg_music_db ?? -22).replace('-', '−');
-  } catch (_) { /* optional panel */ }
-}
-
-async function savePublishing(patch) {
-  await fetch(`/api/books/${BOOK_ID}/publishing`, {
-    method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(patch),
-  });
-}
-
-document.getElementById('export-narrator-credit')?.addEventListener('change', event => {
-  savePublishing({narrator_credit: event.target.value});
-});
-document.getElementById('export-music-db')?.addEventListener('input', event => {
-  document.getElementById('export-music-db-value').textContent = String(event.target.value).replace('-', '−');
-});
-document.getElementById('export-music-db')?.addEventListener('change', event => {
-  savePublishing({bg_music_db: Number(event.target.value)});
-});
-document.getElementById('export-music-file')?.addEventListener('change', async event => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  const form = new FormData();
-  form.append('file', file);
-  const response = await fetch(`/api/books/${BOOK_ID}/background-music`, {method: 'POST', body: form});
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) showToast(data.error || 'A zene feltöltése nem sikerült.', 'err');
-  event.target.value = '';
-  loadPublishingInfo();
-});
-document.getElementById('export-music-remove')?.addEventListener('click', async () => {
-  await fetch(`/api/books/${BOOK_ID}/background-music`, {method: 'DELETE'});
-  loadPublishingInfo();
-});
-loadPublishingInfo();
-
-function selectedExportChapters() {
-  const all = [...document.querySelectorAll('input[name="exp-chapter"]')];
-  const checked = all.filter(input => input.checked).map(input => input.value);
-  if (!checked.length) return '';
-  return checked.length === all.length ? 'all' : checked.join(',');
-}
-
-function appendExportLink(container, href, label) {
-  if (!href) return;
-  const link = document.createElement('a');
-  link.href = href;
-  link.textContent = label;
-  link.setAttribute('download', '');
-  container.appendChild(link);
-}
-
-function renderExportLinks(result, jobId) {
-  const container = document.getElementById('export-links');
-  container.replaceChildren();
-  appendExportLink(container, result?.download, 'Export letöltése');
-  appendExportLink(container, result?.zip_download, 'Csomag letöltése');
-  appendExportLink(container, result?.audio_download, 'Hangfájl letöltése');
-  appendExportLink(container, result?.subtitle_download, 'Felirat letöltése');
-  const jobs = document.createElement('a');
-  jobs.href = `/jobs#job-${encodeURIComponent(jobId)}`;
-  jobs.textContent = 'Export megnyitása a Feladatok oldalon';
-  container.appendChild(jobs);
-}
-
-document.getElementById('export-btn').onclick = () => {
-  const dropdown = document.getElementById('export-dropdown');
-  const open = dropdown.classList.toggle('hidden') === false;
-  document.getElementById('export-btn').setAttribute('aria-expanded', String(open));
-  if (open) document.getElementById('export-preset').focus();
-};
-
-document.querySelectorAll('input[name="exp-mode"]').forEach(input => {
-  input.addEventListener('change', updateExportScope);
-});
-
-document.getElementById('export-preset').addEventListener('change', event => {
-  applyExportPreset(event.target.value);
-});
-document.getElementById('select-all-chapters').addEventListener('click', () => selectAllExportChapters(true));
-document.getElementById('select-no-chapters').addEventListener('click', () => selectAllExportChapters(false));
-
-document.getElementById('do-export-btn').onclick = async () => {
-  if (!currentChapterId) { showToast('Előbb nyiss meg egy fejezetet.'); return; }
-
-  const mode      = document.querySelector('input[name="exp-mode"]:checked').value;
-  const audioFmt  = document.querySelector('input[name="exp-audio"]:checked').value;
-  const subInput  = document.querySelector('input[name="exp-sub"]:checked');
-  const subFmt    = subInput ? subInput.value : 'none';
-  const selectedChapters = mode === 'chapterwise' ? selectedExportChapters() : null;
-  if (mode === 'chapterwise' && !selectedChapters) {
-    showToast('Jelölj ki legalább egy fejezetet.', 'err');
-    return;
-  }
-
-  const status    = document.getElementById('export-status');
-  const progWrap  = document.getElementById('export-progress-wrap');
-  const progFill  = document.getElementById('export-progress-fill');
-  const doBtn     = document.getElementById('do-export-btn');
-
-  doBtn.disabled = true;
-  progWrap.classList.add('active');
-  progFill.style.width = '0%';
-  status.textContent = 'Az export indítása…';
-  document.getElementById('export-links').replaceChildren();
-  // Stop background single-segment prewarm so export can batch on the GPU.
-  _exportBusy = true;
-  _bufferGenId++;
-  if (isPlaying) {
-    try { stopPlayback(); } catch (_) {}
-  }
-
-  let url;
-  if (mode === 'chapter')          url = `/api/books/${BOOK_ID}/export/chapter/${currentChapterId}`;
-  else                             url = `/api/books/${BOOK_ID}/export/chapterwise`;
-
-  const finish = (msg) => {
-    _exportBusy = false;
-    status.textContent = msg;
-    progWrap.classList.remove('active');
-    doBtn.disabled = false;
-  };
-
-  try {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        audio_fmt: audioFmt,
-        sub_fmt: subFmt,
-        chapters: selectedChapters,
-        package: document.getElementById('export-package')?.value || 'none',
-        intro: Boolean(document.getElementById('export-intro')?.checked),
-        outro: Boolean(document.getElementById('export-outro')?.checked),
-        sample: Boolean(document.getElementById('export-sample')?.checked),
-        abs_upload: Boolean(document.getElementById('export-abs-upload')?.checked),
-      }),
-    });
-    const d = await r.json();
-    if (d.error) { finish(d.error); return; }
-
-    const jobId = d.job_id;
-    renderExportLinks(null, jobId);
-
-    // Client-side ETA fallback if server has not reported one yet.
-    let clientT0 = Date.now();
-    let clientDone0 = null;
-
-    while (true) {
-      await new Promise(res => setTimeout(res, 500));
-      let sr;
-      try { sr = await fetch(`/api/export/status/${jobId}`).then(r => r.json()); }
-      catch(_) { continue; }
-      if (sr.error && !sr.state) sr.state = 'failed';
-
-      if (sr.total > 0) {
-        const pct = Math.min(Math.round((sr.done / sr.total) * 95), 95);
-        progFill.style.width = pct + '%';
-      }
-
-      // Local ETA when server still estimating (e.g. first synth batch in flight).
-      if (
-        sr.state === 'running' &&
-        sr.total > 0 &&
-        typeof sr.done === 'number' &&
-        (sr.eta_sec == null || !Number.isFinite(sr.eta_sec)) &&
-        sr.done < sr.total
-      ) {
-        if (clientDone0 == null && sr.done > 0) {
-          clientDone0 = sr.done;
-          clientT0 = Date.now();
-        } else if (clientDone0 != null && sr.done > clientDone0) {
-          const elapsed = (Date.now() - clientT0) / 1000;
-          const advanced = sr.done - clientDone0;
-          if (elapsed >= 2 && advanced > 0) {
-            sr.eta_sec = (sr.total - sr.done) / (advanced / elapsed);
-          }
-        }
-      }
-
-      status.textContent = formatExportStatus(sr);
-
-      if (sr.state === 'complete') {
-        progFill.style.width = '100%';
-        const res = sr.result || {};
-        renderExportLinks(res, jobId);
-        finish('Az export elkészült. A fájlok lent tölthetők le.' +
-          (res.mastering_warning ? ' A hangerő-kiegyenlítés kimaradt: ' + res.mastering_warning : ''));
-        break;
-      } else if (sr.state === 'failed') {
-        finish('Az export nem sikerült: ' + (sr.error || 'Ismeretlen hiba'));
-        break;
-      } else if (['cancelled', 'interrupted'].includes(sr.state)) {
-        finish(sr.state === 'cancelled' ? 'Az export leállítva. A Feladatok oldalon folytathatod.' : 'Az export megszakadt. A Feladatok oldalon folytathatod.');
-        break;
-      }
-    }
-  } catch(e) {
-    finish(e.message);
-  }
-};
-
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
@@ -2061,7 +1710,23 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
-  if (_activeModal || isInteractiveElement(document.activeElement)) return;
+  if (_activeModal) return;
+  // Seek and speed keys work while a player button has focus; only text
+  // entry swallows them.
+  const typing = document.activeElement?.closest?.(
+    'input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]'
+  );
+  if (!typing && ['j', 'J', 'l', 'L', '[', ']'].includes(e.key)) {
+    e.preventDefault();
+    if (e.key === 'j' || e.key === 'J') seekAudioBy(-15);
+    else if (e.key === 'l' || e.key === 'L') seekAudioBy(15);
+    else {
+      setPlaybackSpeed(speedMultiplier + (e.key === ']' ? 0.1 : -0.1));
+      showToast(`Sebesség: ${speedMultiplier.toFixed(1)}×`);
+    }
+    return;
+  }
+  if (isInteractiveElement(document.activeElement)) return;
 
   switch(e.key) {
     case ' ':
@@ -2094,6 +1759,26 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// Sentences are focusable (roving tabindex): arrows move, Enter plays.
+document.getElementById('chapter-content')?.addEventListener('keydown', (event) => {
+  const sentence = event.target.closest?.('.sentence');
+  if (!sentence) return;
+  const idx = Number(sentence.dataset.idx);
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    jumpTo(idx);
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    const next = document.querySelector(`.sentence[data-idx="${idx + (event.key === 'ArrowDown' ? 1 : -1)}"]`);
+    if (next) {
+      event.preventDefault();
+      event.stopPropagation();
+      sentence.tabIndex = -1;
+      next.tabIndex = 0;
+      next.focus();
+    }
+  }
+});
+
 function showShortcuts() {
   const overlay = document.getElementById('shortcuts-overlay');
   openModal(overlay, overlay.querySelector('.shortcuts-panel'));
@@ -2116,42 +1801,5 @@ function showToast(msg, type = 'ok') {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  return Auris.esc(s || '');
 }
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-
-window.addEventListener('scroll', scheduleViewportProgressUpdate, { passive: true });
-window.addEventListener('pagehide', () => {
-  flushProgressSave({ useBeacon: true, force: true });
-  _bufferGenId++;
-  for (const controller of _ttsAbortControllers.values()) controller.abort();
-  _ttsAbortControllers.clear();
-  navigator.sendBeacon('/api/tts/cancel');
-});
-window.addEventListener('beforeunload', () => flushProgressSave({ useBeacon: true, force: true }));
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    flushProgressSave({ useBeacon: true, force: true });
-  }
-});
-
-_audioA.addEventListener('timeupdate', updateRemainingTime);
-_audioB.addEventListener('timeupdate', updateRemainingTime);
-setTOCOpen(!window.matchMedia('(max-width: 768px)').matches);
-applySpeakerLabelPreference();
-applyExportPreset(document.getElementById('export-preset').value);
-initMediaSession();
-
-loadTOC();
-
-function persistTimedProgress() {
-  if (_loadedSegIdx !== currentSegIdx || !currentChapterId) return;
-  if (Date.now() - _progressTick >= 5000) {
-    _progressTick = Date.now();
-    sendProgress(currentChapterId, currentSegIdx);
-  }
-}
-_audioA.addEventListener('timeupdate', persistTimedProgress);
-_audioB.addEventListener('timeupdate', persistTimedProgress);

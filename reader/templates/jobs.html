@@ -1,8 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Feladatok — Auris{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/jobs.css">{% endblock %}
 {% block content %}
-<main class="jobs-page"><h1>Feladatok</h1><p>Generálás, export és szereplőelemzés egy helyen. Nyugodtan elnavigálhatsz: a szerver folytatja a munkát.</p>
-<p class="muted">Szerverleállás után a félbemaradt feladatot a Folytatás gombbal indíthatod újra. Az érvényes elkészült hangokat újra felhasználjuk. A megszakítás a folyamatban lévő részfeladat után léphet életbe.</p>
-<button class="btn btn-ghost" onclick="loadJobs()">Frissítés</button><p id="jobs-message" role="status" aria-live="polite"></p><div id="jobs-list"><p>Feladatok betöltése…</p></div></main>
+<main class="jobs-page">
+ <div class="jobs-header"><h1>Feladatok</h1><button type="button" class="btn btn-ghost" id="jobs-refresh"><span data-icon="fwd15"></span><span>Frissítés</span></button></div>
+ <p class="jobs-intro">Generálás, export, ellenőrzés és szereplőelemzés egy helyen. Nyugodtan elnavigálhatsz: a szerver folytatja a munkát, ez az oldal pedig magától frissül.</p>
+ <details class="jobs-help"><summary>Mi történik leállításkor és újraindításkor?</summary><p>Szerverleállás után a félbemaradt feladatot a Folytatás gombbal indíthatod újra. Az érvényes, már elkészült hangokat újra felhasználjuk. A leállítás a folyamatban lévő részfeladat után lép életbe.</p></details>
+ <div class="jobs-filters" id="jobs-filters" role="group" aria-label="Feladatok szűrése">
+  <button type="button" data-filter="active" aria-pressed="false">Aktív <span class="filter-count">0</span></button>
+  <button type="button" data-filter="done" aria-pressed="false">Kész <span class="filter-count">0</span></button>
+  <button type="button" data-filter="problem" aria-pressed="false" title="Hibás, megszakadt vagy leállított feladatok">Hibás <span class="filter-count">0</span></button>
+  <button type="button" data-filter="all" aria-pressed="true">Mind <span class="filter-count">0</span></button>
+ </div>
+ <p id="jobs-message" class="jobs-message" role="status" aria-live="polite"></p>
+ <div id="jobs-live" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+ <p id="jobs-loading" class="jobs-loading">Feladatok betöltése…</p>
+ <ul id="jobs-list" class="jobs-list" aria-label="Feladatok"></ul>
+ <div id="jobs-empty" class="experience-card jobs-empty" hidden><h2>Még nincs feladat</h2><p>Nyiss meg egy könyvet, és indíts fejezethangot vagy exportot.</p><a href="/" class="btn btn-primary"><span data-icon="book"></span><span>Könyvtár</span></a></div>
+</main>
 {% endblock %}
 {% block scripts %}<script src="/static/js/jobs.js"></script>{% endblock %}

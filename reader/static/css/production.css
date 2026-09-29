@@ -1,0 +1,78 @@
+/* Production dashboard */
+.prod-page { max-width: 1100px; margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-7); font-family: var(--ui-font); }
+.prod-header { display: flex; gap: var(--space-5); align-items: center; margin-bottom: var(--space-5); }
+.prod-cover { width: 96px; aspect-ratio: 2 / 3; border-radius: var(--radius-md); overflow: hidden; background: var(--bg3);
+              display: grid; place-items: center; font-size: var(--text-2xl); color: var(--accent); flex-shrink: 0; }
+.prod-cover img { width: 100%; height: 100%; object-fit: cover; }
+.prod-eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: var(--text-xs); color: var(--accent); margin: 0 0 var(--space-1); font-weight: 700; }
+.prod-heading h1 { margin: 0; font-family: var(--font-family); font-size: var(--text-xl); }
+.prod-author { margin: var(--space-1) 0 var(--space-3); color: var(--text2); }
+.prod-links { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.prod-links .btn { display: inline-flex; gap: var(--space-1); align-items: center; }
+
+.prod-steps { list-style: none; display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--space-2); margin: 0 0 var(--space-5); padding: 0; counter-reset: step; }
+.prod-step { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); background: var(--bg2); }
+.prod-step.is-done { border-color: color-mix(in srgb, var(--color-success) 55%, var(--border)); }
+.prod-step-mark { width: 26px; height: 26px; border-radius: var(--radius-pill); display: grid; place-items: center; background: var(--bg3); font-size: var(--text-sm); }
+.prod-step.is-done .prod-step-mark { background: var(--color-success-bg); color: var(--color-success); }
+.prod-step-label { font-weight: 600; }
+.prod-step-note { font-size: var(--text-xs); color: var(--text2); }
+
+.prod-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.prod-stat { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; }
+.prod-stat-value { font-size: var(--text-lg); font-variant-numeric: tabular-nums; }
+.prod-stat-label { font-size: var(--text-xs); color: var(--text2); }
+
+.prod-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-bottom: var(--space-3); }
+.prod-actions .btn-primary { display: inline-flex; gap: var(--space-2); align-items: center; }
+.prod-export { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.prod-export-label { color: var(--text2); font-size: var(--text-sm); }
+.prod-credits { font-size: var(--text-sm); }
+.prod-job { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); }
+.prod-job-links { margin-top: var(--space-2); display: flex; gap: var(--space-3); font-size: var(--text-sm); }
+.prod-progress, .prod-bar { height: 6px; background: var(--border); border-radius: var(--radius-pill); overflow: hidden; margin-top: var(--space-2); }
+.prod-progress div, .prod-bar div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+.prod-bar { width: 120px; display: inline-block; vertical-align: middle; margin: 0 var(--space-2) 0 0; }
+
+.prod-section { margin-top: var(--space-6); }
+.prod-section h2 { font-size: var(--text-lg); margin: 0 0 var(--space-3); }
+.prod-table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.prod-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.prod-table th, .prod-table td { text-align: left; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); vertical-align: middle; }
+.prod-table th { color: var(--text2); font-weight: 600; background: var(--bg2); }
+.prod-table tr:last-child td { border-bottom: 0; }
+.prod-sub { font-size: var(--text-xs); }
+.prod-row-actions { white-space: nowrap; text-align: right; }
+.qa-mini { display: inline-block; min-width: 22px; text-align: center; border-radius: var(--radius-sm); padding: 1px 5px; margin-right: 3px; font-variant-numeric: tabular-nums; font-size: var(--text-xs); }
+.qa-mini.ok { background: var(--color-success-bg); color: var(--color-success); }
+.qa-mini.warn { background: var(--color-warning-bg); color: var(--color-warning); }
+.qa-mini.fail { background: var(--color-danger-bg); color: var(--color-danger); }
+
+.prod-cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: var(--space-2); }
+.prod-cast-item { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: 2px; }
+.prod-cast-item.has-ref { border-color: var(--accent); }
+.prod-cast > p { grid-column: 1 / -1; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .prod-page { padding: var(--space-4) var(--space-4) var(--space-6); }
+  .prod-steps { grid-template-columns: repeat(3, 1fr); }
+  .prod-header { align-items: flex-start; }
+  .prod-cover { width: 64px; }
+  .prod-row-actions { white-space: normal; }
+}
+
+/* Phones: every chapter becomes a compact card instead of a wide table row. */
+@media (max-width: 600px) {
+  .prod-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .prod-table, .prod-table tbody, .prod-table tr, .prod-table td { display: block; width: 100%; }
+  .prod-table tr { display: grid; grid-template-columns: 2.5rem 1fr; padding: var(--space-3); border-bottom: 1px solid var(--border); }
+  .prod-table tr:last-child { border-bottom: 0; }
+  .prod-table td { border: 0; padding: var(--space-1) 0; grid-column: 2; }
+  .prod-table td.prod-col-num { grid-column: 1; grid-row: 1; font-weight: 600; }
+  .prod-table td.prod-col-title { grid-row: 1; }
+  .prod-table td[data-label] { display: flex; align-items: center; gap: var(--space-2); }
+  .prod-table td[data-label]::before { content: attr(data-label); min-width: 6.5rem; color: var(--text2); font-size: var(--text-xs, 0.75rem); }
+  .prod-table td[data-label] .prod-bar { flex: 1; }
+  .prod-table td[colspan] { grid-column: 1 / -1; }
+}

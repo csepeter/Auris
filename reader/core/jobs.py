@@ -132,7 +132,7 @@ def create_job(
     *,
     book_id: int | None = None,
     chapter_id: int | None = None,
-    message: str = "Starting...",
+    message: str = "Indítás…",
     done: int = 0,
     total: int = 0,
     job_id: str | None = None,

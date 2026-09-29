@@ -61,7 +61,7 @@ class _Engine:
 
 class AssistApiTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.patches = [
             patch.object(database, "DB_PATH", os.path.join(self.tmp.name, "reader.db")),
             patch.object(app_settings, "SETTINGS_FILE", Path(self.tmp.name) / "settings.json"),

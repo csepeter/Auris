@@ -13,25 +13,38 @@
       <p class="voice-intro">Válassz mentett hangot, vagy állíts be külön narrátort és szereplőhangokat.</p>
     </div>
   </header>
+  <p id="studio-live" class="sr-only" role="status" aria-live="polite"></p>
 
   <section class="studio-narrator" aria-labelledby="preview-text-title">
     <h2 id="preview-text-title" class="studio-section-title">Próbaszöveg</h2>
-    <article class="character-card narrator-card">
-      <div class="char-avatar narrator-avatar" aria-hidden="true">▶</div>
+    <article class="character-card narrator-card sample-card">
+      <button type="button" id="sample-play-btn" class="char-avatar narrator-avatar sample-play-btn" aria-label="Próbaszöveg meghallgatása a narrátor hangján" title="Meghallgatás a narrátor hangján"><span data-icon="play"></span></button>
       <div class="char-details">
         <label for="voice-preview-text">Ezt a magyar szöveget olvassa fel a próbahang</label>
         <textarea id="voice-preview-text" class="reference-text" rows="3" maxlength="1500">Az árvíztűrő tükörfúrógép próbája tisztán és természetesen szól magyarul.</textarea>
-        <p class="studio-note">A szöveg csak a próbahanghoz használatos, nem módosítja a könyvet. Legfeljebb 1500 karakter.</p>
+        <div data-player-slot="sample" data-player-label="Próbaszöveg a narrátor hangján"></div>
+        <p class="studio-note">A szöveg csak a próbahanghoz használatos, nem módosítja a könyvet. Legfeljebb 1500 karakter. A lejátszás gomb a narrátor hangján olvassa fel.</p>
       </div>
     </article>
   </section>
 
-  <section class="studio-narrator" aria-labelledby="narrator-title">
+  <section class="studio-narrator" id="narrator-section" aria-labelledby="narrator-title">
     <h2 id="narrator-title" class="studio-section-title">Narrátor</h2>
     <article class="character-card narrator-card">
       <div class="char-avatar narrator-avatar" aria-hidden="true">N</div>
       <div class="char-details">
-        <h3 class="char-name">Narrátor</h3>
+        <div class="narrator-head">
+          <div class="character-summary-text">
+            <h3 class="char-name">Narrátor</h3>
+            <p class="voice-summary" id="narrator-voice-summary"></p>
+            <p class="char-meta"><span id="narrator-source-badge"></span></p>
+          </div>
+          <div class="voice-character-actions">
+            <button id="narrator-preview-btn" class="btn btn-sm btn-primary" type="button"><span data-icon="play"></span><span>Meghallgatás</span></button>
+            <button id="narrator-compare-btn" class="btn btn-sm btn-ghost" type="button"><span data-icon="users"></span><span>Összehasonlítás</span></button>
+          </div>
+        </div>
+        <div data-player-slot="narrator" data-player-label="Narrátor próbahangja"></div>
 
         <section class="profile-controls" aria-label="Narrátor mentett hangprofilja">
           <label for="profile-narrator">Mentett hangprofil</label>
@@ -60,8 +73,10 @@
           <h4 id="narrator-reference-title">Referenciahang</h4>
           <div id="narrator-ref-status" class="reference-status{% if not book.narrator_ref_audio_path %} hidden{% endif %}">
             <span class="reference-status-label">Aktív referencia:</span>
-            <span id="narrator-ref-name">{{ book.narrator_ref_audio_name or 'Korábban feltöltött WAV' }}</span>
+            <span id="narrator-ref-name" class="reference-name">{{ book.narrator_ref_audio_name or 'Korábban feltöltött WAV' }}</span>
+            <button id="narrator-ref-play" type="button" class="btn btn-sm btn-ghost ref-play-btn"><span data-icon="play"></span><span>Referencia meghallgatása</span></button>
           </div>
+          <div data-player-slot="ref-narrator" data-player-label="Narrátor referenciahangja"></div>
           <label for="narrator-ref-text">Referenciahang pontos átirata</label>
           <textarea id="narrator-ref-text" class="reference-text" rows="3" placeholder="Pontosan azt írd ide, ami a hangfelvételen elhangzik.">{{ book.narrator_ref_text or '' }}</textarea>
           <div class="reference-actions">
@@ -73,8 +88,10 @@
               <span>Referencia WAV kiválasztása</span>
               <input id="narrator-ref-file" type="file" accept=".wav,audio/wav" onchange="uploadNarratorRef(event)">
             </label>
+            <button id="narrator-record-btn" class="btn btn-sm btn-ghost" type="button" aria-expanded="false" aria-controls="rec-narrator"><span data-icon="mic"></span><span>Felvétel mikrofonnal</span></button>
             <button id="remove-narrator-ref-btn" class="btn btn-sm btn-ghost" type="button" onclick="removeNarratorRef()">Referencia törlése</button>
           </div>
+          <div class="recorder" id="rec-narrator" hidden></div>
           <p class="studio-note">Tiszta, egyetlen beszélőt tartalmazó, 3–10 másodperces magyar felvétel ajánlott. A pontos átirat javítja a hangklónozás minőségét.</p>
         </section>
 
@@ -82,7 +99,7 @@
           <input type="checkbox" id="single-narrator-mode">
           <span>Ez a narrátor olvassa fel a teljes könyvet</span>
         </label>
-        <p class="studio-note">Bekapcsolva a párbeszédek is a narrátor hangján szólalnak meg.</p>
+        <p class="studio-note">Bekapcsolva a párbeszédek is a narrátor hangján szólalnak meg. A változás a Mentés gombbal lép életbe.</p>
 
         <details class="technical-panel">
           <summary>Hang finomhangolása</summary>
@@ -125,13 +142,15 @@
               </select>
             </label>
           </div>
-          <div class="char-card-footer">
-            <span class="instruct-preview" id="narrator-instruct-preview"></span>
-            <button id="narrator-preview-btn" class="btn btn-sm btn-ghost" type="button">▶ Magyar próba</button>
-            <button id="narrator-download-btn" class="btn btn-sm btn-ghost" type="button">↓ Próba mentése</button>
-            <button class="btn btn-sm btn-primary" type="button" onclick="saveNarrator()">Mentés</button>
-          </div>
+          <details class="tech-disclosure">
+            <summary>Technikai leírás</summary>
+            <code class="instruct-preview" id="narrator-instruct-preview"></code>
+          </details>
         </details>
+        <div class="char-card-footer narrator-footer">
+          <button id="narrator-download-btn" class="btn btn-sm btn-ghost" type="button"><span data-icon="download"></span><span>Próba mentése</span></button>
+          <button id="narrator-save-btn" class="btn btn-sm btn-primary" type="button">Mentés</button>
+        </div>
       </div>
     </article>
   </section>
@@ -166,13 +185,67 @@
       <p id="assist-status" class="assist-status" role="status" aria-live="polite"></p>
       <div id="assist-suggestions" class="assist-suggestions"></div>
     </details>
-    <div id="char-list" class="char-list" aria-live="polite">
-      <div class="loading-spinner">Szereplők betöltése…</div>
+
+    <div class="character-toolbar">
+      <label class="toolbar-field" for="character-sort">
+        <span>Rendezés</span>
+        <select id="character-sort" class="vc-select">
+          <option value="lines">Megszólalások száma szerint</option>
+          <option value="name">Név szerint (A–Z)</option>
+        </select>
+      </label>
+      <label class="select-all-row">
+        <input type="checkbox" id="select-all-characters">
+        <span>Összes látható kijelölése</span>
+      </label>
+      <p id="voice-source-summary" class="voice-source-summary"></p>
+    </div>
+    <div class="bulk-bar" id="bulk-bar" role="group" aria-label="Kijelölt szereplők">
+      <span id="bulk-count" class="bulk-count" role="status" aria-live="polite">Nincs kijelölt szereplő</span>
+      <label class="sr-only" for="bulk-profile">A kijelöltekre alkalmazandó hangprofil</label>
+      <select id="bulk-profile" class="vc-select voice-profile-select">
+        <option value="">Válassz mentett hangot…</option>
+      </select>
+      <button type="button" id="bulk-apply" class="btn btn-sm btn-primary" disabled>Kijelöltek: profil alkalmazása</button>
+      <button type="button" id="bulk-clear" class="btn btn-sm btn-ghost">Kijelölés törlése</button>
+    </div>
+
+    <div id="char-list" class="char-list">
+      <div class="loading-spinner" role="status">Szereplők betöltése…</div>
     </div>
   </section>
 </main>
 
-<audio id="preview-audio" class="hidden" aria-hidden="true"></audio>
+<dialog id="compare-drawer" class="compare-drawer" aria-labelledby="compare-title">
+  <div class="compare-inner">
+    <header class="compare-head">
+      <h2 id="compare-title">Hangok összehasonlítása</h2>
+      <button type="button" id="compare-close" class="btn btn-sm btn-ghost">Bezárás</button>
+    </header>
+    <p id="compare-target" class="studio-note"></p>
+    <label for="compare-text" class="compare-label">Közös próbamondat</label>
+    <textarea id="compare-text" class="reference-text" rows="2" maxlength="1500"></textarea>
+    <fieldset class="compare-picker">
+      <legend>Mit hasonlítsunk össze? (legfeljebb 3 mentett hang)</legend>
+      <div id="compare-options" class="compare-options"></div>
+    </fieldset>
+    <p id="compare-status" class="studio-note" role="status" aria-live="polite"></p>
+    <div id="compare-grid" class="compare-grid"></div>
+  </div>
+</dialog>
+
+<dialog id="vs-confirm" class="vs-dialog" aria-labelledby="vs-confirm-title" aria-describedby="vs-confirm-message">
+  <form method="dialog">
+    <h2 id="vs-confirm-title">Megerősítés</h2>
+    <p id="vs-confirm-message"></p>
+    <div class="vs-dialog-actions">
+      <button type="submit" value="cancel" data-confirm="cancel" class="btn btn-sm btn-ghost">Mégse</button>
+      <button type="submit" value="ok" data-confirm="ok" class="btn btn-sm btn-primary">Megerősítés</button>
+    </div>
+  </form>
+</dialog>
+
+<audio id="preview-audio" class="hidden" aria-hidden="true" preload="auto"></audio>
 {% endblock %}
 {% block scripts %}
 <script>window.BOOK_ID = {{ book.id }};</script>

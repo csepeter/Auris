@@ -1,0 +1,31 @@
+services:
+  auris:
+    build:
+      context: .
+      args:
+        TORCH_VARIANT: cu128   # "cpu" for machines without an NVIDIA GPU
+    image: auris:latest
+    ports:
+      - "127.0.0.1:7860:7860"
+    environment:
+      # Names the browser uses to reach Auris; add your LAN host name if needed.
+      AURIS_ALLOWED_HOSTS: localhost,127.0.0.1
+    volumes:
+      - ./docker-data/data:/app/reader/data
+      - ./docker-data/models:/app/reader/models
+      - ./docker-data/exports:/app/reader/exports
+      - ./docker-data/audio_cache:/app/reader/audio_cache
+      - ./docker-data/uploads:/app/reader/uploads
+      - ./model_backup:/app/model_backup
+      - huggingface:/data/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  huggingface:

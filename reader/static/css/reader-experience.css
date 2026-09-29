@@ -341,3 +341,29 @@
 .pron-status { margin: 0; font-size: .82rem; min-height: 1.2em; }
 .pron-status.is-error { color: #e57373; }
 .pron-status.is-ok { color: #6ec890; }
+
+/* Chapter timeline in the player bar */
+.pb-timeline { display: flex; align-items: center; gap: var(--space-2); width: min(520px, 100%); }
+.pb-timeline input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 80px; }
+.pb-time { font-family: var(--ui-font); font-size: var(--text-xs); color: var(--text2); min-width: 3.2em; text-align: center; }
+.playback-center { flex-direction: column; gap: 2px; }
+.pb-btn .icon { width: 1.15em; height: 1.15em; }
+.pb-play .icon { width: 1.3em; height: 1.3em; }
+.pb-seek { display: inline-flex; align-items: center; gap: 1px; }
+.pb-seek span:last-child { font-size: .62rem; }
+.sentence:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* Phone toolbar: one scrollable row with a fade hinting at more tools. */
+@media (max-width: 640px) {
+  .reader-toolbar { flex-wrap: nowrap; }
+  .reader-toolbar .font-controls {
+    overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; max-width: 100%;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+            mask-image: linear-gradient(90deg, #000 88%, transparent);
+  }
+  .reader-toolbar .font-controls::-webkit-scrollbar { display: none; }
+  .reader-toolbar .font-controls .btn { flex-shrink: 0; }
+  #text-editor-open { font-size: 0; }
+  #text-editor-open::before { content: "✎"; font-size: var(--text-md); }
+  .reading-estimate { display: none; }
+}

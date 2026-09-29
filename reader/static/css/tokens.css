@@ -1,0 +1,98 @@
+/* Auris design tokens — shared scale for spacing, type, radii and semantic
+   colours. Theme files (style.css) define the surface/text palette; these
+   tokens build on it so every page speaks the same visual language. */
+:root {
+  /* spacing (4 px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* type scale (UI font) */
+  --text-xs: .75rem;
+  --text-sm: .85rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.6rem;
+  --text-2xl: 2rem;
+
+  /* radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* semantic colours (checked for ≥4.5:1 on the night surfaces) */
+  --color-success: #6ec890;
+  --color-warning: #e0b050;
+  --color-danger: #e57373;
+  --color-info: #7fb2e5;
+  --color-success-bg: color-mix(in srgb, var(--color-success) 14%, transparent);
+  --color-warning-bg: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  --color-danger-bg: color-mix(in srgb, var(--color-danger) 14%, transparent);
+
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
+  --transition-fast: 120ms ease;
+}
+
+/* Light themes need darker semantic colours for contrast. */
+:root.theme-paper, :root.theme-sepia {
+  --color-success: #1f7a45;
+  --color-warning: #8a5a00;
+  --color-danger: #b3261e;
+  --color-info: #1d5fa3;
+}
+
+/* Tabular figures instead of monospace for counters and durations. */
+.num, .badge, .word-count, .qa-cer, .chapter-generate-percent {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+
+.skip-link {
+  position: absolute; left: var(--space-3); top: -60px; z-index: 1000;
+  background: var(--accent); color: #1a1a1a; padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm); text-decoration: none; font-family: var(--ui-font);
+}
+.skip-link:focus { top: var(--space-3); }
+
+/* Inline SVG icons (see static/js/icons.js) */
+.icon { width: 1.1em; height: 1.1em; vertical-align: -0.18em; stroke: currentColor; fill: none;
+        stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* Global toast region used by static/js/common.js */
+.toast-region {
+  position: fixed; bottom: var(--space-5); left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: var(--space-2); z-index: 900; pointer-events: none;
+}
+.toast-item {
+  pointer-events: auto; background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: var(--radius-md); padding: var(--space-2) var(--space-4);
+  box-shadow: var(--shadow-sm); font-family: var(--ui-font); font-size: var(--text-sm); max-width: min(560px, 90vw);
+}
+.toast-item.is-error { border-left-color: var(--color-danger); }
+.toast-item.is-ok { border-left-color: var(--color-success); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important;
+  }
+}
+
+/* Compact top bar on phones: one row, status as a dot. */
+@media (max-width: 640px) {
+  .topnav { flex-wrap: nowrap !important; gap: var(--space-2) !important; padding: var(--space-2) var(--space-3) !important; }
+  .topnav .brand-sub { display: none; }
+  .topnav .nav-links { gap: var(--space-3) !important; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap !important; }
+  .topnav .nav-links a { white-space: nowrap; font-size: var(--text-sm); }
+  #model-badge { font-size: 0; width: 12px; height: 12px; min-width: 12px; padding: 0 !important; border-radius: var(--radius-pill); flex-shrink: 0; }
+  #model-badge.badge-ready { background: var(--color-success); }
+  #model-badge.badge-loading { background: var(--color-warning); }
+  #model-badge.badge-error { background: var(--color-danger); }
+  #model-badge.badge-idle { background: var(--text3); }
+}

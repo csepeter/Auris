@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 from flask import jsonify, request
 
-SECRET_SETTING_KEYS = ('llm_api_key', 'openai_api_key', 'abs_api_token')
+SECRET_SETTING_KEYS = ('llm_api_key', 'openai_api_key', 'abs_api_token', 'api_token')
 SECRET_MASK = '••••••••'
 _UNSAFE_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
 _LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1', '[::1]'})

@@ -2,14 +2,14 @@
   --text2: #b2a797;
   --text3: #a39888;
 }
-body.theme-sepia {
+:root.theme-sepia {
   --text2: #6e593c;
   --text3: #776142;
 }
-body.theme-paper {
+:root.theme-paper {
   --text3: #736a61;
 }
-body.theme-amoled {
+:root.theme-amoled {
   --text2: #a89f93;
   --text3: #948b81;
 }

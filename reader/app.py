@@ -42,6 +42,23 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
 security.install(app)
 
+_I18N_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'i18n', 'hu.json')
+_i18n_cache: dict = {'mtime': None, 'data': {}}
+
+
+@app.context_processor
+def _inject_i18n():
+    """Shared UI strings (static/i18n/hu.json) for Auris.t() in the browser."""
+    try:
+        mtime = os.path.getmtime(_I18N_PATH)
+        if mtime != _i18n_cache['mtime']:
+            with open(_I18N_PATH, encoding='utf-8') as handle:
+                _i18n_cache['data'] = json.load(handle)
+            _i18n_cache['mtime'] = mtime
+    except (OSError, ValueError):
+        pass
+    return {'i18n': _i18n_cache['data']}
+
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -88,7 +105,7 @@ _GATED_MUTATION_ENDPOINTS = {
     'import_book', 'delete_book', 'update_speaker_annotation', 'save_chapter_text', 'restore_chapter_text',
     'upload_ref_audio',
     'delete_ref_audio', 'upload_narrator_ref_audio',
-    'delete_narrator_ref_audio', 'save_settings', 'tts_load', 'tts_reload',
+    'delete_narrator_ref_audio', 'settings_api.save_settings', 'tts_load', 'settings_api.tts_reload',
 }
 _VOICE_MUTATION_ENDPOINTS = {'update_character', 'update_narrator'}
 _CONSISTENT_READ_ENDPOINTS = {'get_chapter_editor', 'get_chapter', 'get_segments', 'tts_generate'}
@@ -600,6 +617,7 @@ def _launch_durable_job_unlocked(stored: dict) -> bool:
     elif job_type == 'export_chapter':
         _prune_job_cache(_export_jobs)
         _export_jobs[job_id] = job
+        from core.export_api import _run_chapter_export
         target = _run_chapter_export
         args = (
             job_id, int(payload['book_id']), int(payload['chapter_id']),
@@ -608,6 +626,7 @@ def _launch_durable_job_unlocked(stored: dict) -> bool:
     elif job_type == 'export_book':
         _prune_job_cache(_export_jobs)
         _export_jobs[job_id] = job
+        from core.export_api import _run_chapterwise_export
         target = _run_chapterwise_export
         args = (
             job_id, int(payload['book_id']), payload.get('audio_fmt', 'wav'),
@@ -620,6 +639,10 @@ def _launch_durable_job_unlocked(stored: dict) -> bool:
             job_id, int(payload['book_id']), int(payload['chapter_id']),
             bool(payload.get('asr', True)), bool(payload.get('auto_regenerate', True)),
         )
+    elif job_type == 'generate_book':
+        from core.production_api import run_book_generation
+        target = run_book_generation
+        args = (job_id, int(payload['book_id']), list(payload['chapter_ids']))
     elif job_type == 'voice_suggestions':
         from core.assist_api import run_voice_suggestions
         target = run_voice_suggestions
@@ -676,7 +699,11 @@ def _launch_durable_job(stored: dict) -> bool:
 def durable_jobs_list():
     jobs.ensure_jobs()
     book_id = request.args.get('book_id', type=int)
-    return jsonify(jobs.list_jobs(book_id=book_id))
+    if request.args.get('state') == 'active':
+        return jsonify(jobs.list_active_jobs(book_id=book_id))
+    rows = jobs.list_jobs(book_id=book_id)
+    limit = request.args.get('limit', type=int)
+    return jsonify(rows[:limit] if limit and limit > 0 else rows)
 
 
 @app.route('/api/jobs/<job_id>/cancel', methods=['POST'])
@@ -722,7 +749,7 @@ def durable_job_download(job_id, artifact):
         return jsonify({'error': 'A feladat eredménye nem található'}), 404
     abs_path = os.path.abspath(path)
     if not _is_inside_exports(abs_path):
-        return jsonify({'error': 'Forbidden'}), 403
+        return jsonify({'error': 'Tiltott hozzáférés'}), 403
     if not os.path.isfile(abs_path):
         return jsonify({'error': 'Az eredményfájl hiányzik'}), 404
     return send_file(abs_path, as_attachment=True)
@@ -816,11 +843,11 @@ def _selected_llm_config(config: dict | None = None) -> dict:
 @app.route('/api/books/import', methods=['POST'])
 def import_book():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
+        return jsonify({'error': 'Nincs feltöltött fájl'}), 400
 
     f = request.files['file']
     if not f.filename:
-        return jsonify({'error': 'Empty filename'}), 400
+        return jsonify({'error': 'Üres fájlnév'}), 400
 
     ext = f.filename.rsplit('.', 1)[-1].lower()
     if ext == 'doc':
@@ -841,7 +868,7 @@ def import_book():
         single_narrator_mode = False
         if not llm_config['base_url']:
             return jsonify({
-                'error': 'Configure a local language-model URL before using character voices.'
+                'error': 'A szereplőhangokhoz előbb add meg a helyi nyelvi modell címét a Beállításokban.'
             }), 400
         if llm_config['provider'] == 'openai' and not llm_config['api_key']:
             return jsonify({
@@ -849,7 +876,7 @@ def import_book():
             }), 400
         if not llm_config['model']:
             return jsonify({
-                'error': 'Select a language model before using character voices.'
+                'error': 'A szereplőhangokhoz előbb válassz nyelvi modellt a Beállításokban.'
             }), 400
     else:
         # Backwards compatibility for API clients that predate the import dialog.
@@ -1388,6 +1415,19 @@ def list_books():
             'LEFT JOIN chapters c ON c.id = rp.chapter_id '
             'ORDER BY COALESCE(b.last_read, b.added_at) DESC, b.added_at DESC'
         ).fetchall()
+    stats: dict[int, list] = {}
+    if request.args.get('include') == 'stats':
+        # One aggregate query instead of one /chapters request per book.
+        with get_conn() as conn:
+            for row in conn.execute(
+                'SELECT c.book_id, c.id, c.order_num, COUNT(s.id) AS audio_total, '
+                'COALESCE(SUM(CASE WHEN s.audio_path IS NOT NULL THEN 1 ELSE 0 END), 0) AS audio_ready '
+                'FROM chapters c LEFT JOIN tts_segments s ON s.chapter_id=c.id AND s.book_id=c.book_id '
+                'GROUP BY c.book_id, c.id, c.order_num ORDER BY c.book_id, c.order_num'
+            ):
+                stats.setdefault(row['book_id'], []).append(
+                    {'id': row['id'], 'audio_total': row['audio_total'], 'audio_ready': row['audio_ready']}
+                )
     books = []
     for r in rows:
         d = dict(r)
@@ -1396,6 +1436,8 @@ def list_books():
             d.pop('cover_b64')
         else:
             d['cover_url'] = None
+        if stats:
+            d['chapter_stats'] = stats.get(d['id'], [])
         books.append(d)
     return jsonify(books)
 
@@ -1444,7 +1486,7 @@ def reanalyze_book(book_id):
         return jsonify({'error': 'A könyv nem található'}), 404
     existing_ids = [int(row['id']) for row in rows]
     if requested_ids is not None and not set(requested_ids).issubset(existing_ids):
-        return jsonify({'error': 'One or more chapters do not belong to this book'}), 400
+        return jsonify({'error': 'Egy vagy több fejezet nem ehhez a könyvhöz tartozik'}), 400
     selected = requested_ids if requested_ids is not None else existing_ids
     if failed_only:
         failed = set(jobs.failed_chapter_ids(book_id))
@@ -1527,17 +1569,17 @@ def update_book(book_id):
             return jsonify({'error': f'{key} must be text.'}), 400
         updates[key] = value.strip()
     if not updates:
-        return jsonify({'error': 'Nothing to update'}), 400
+        return jsonify({'error': 'Nincs mit módosítani'}), 400
 
     if 'title' in updates and not updates['title']:
-        return jsonify({'error': 'Title cannot be empty'}), 400
+        return jsonify({'error': 'A cím nem lehet üres'}), 400
     if 'author' in updates and not updates['author']:
         updates['author'] = 'Unknown Author'
     if 'language' in updates:
         updates['language'] = updates['language'].lower()
         if not _BOOK_LANGUAGE_RE.match(updates['language']):
             return jsonify({
-                'error': 'Language must be a code such as en, hu, ro or zh-cn.'
+                'error': 'A nyelv kódja legyen például hu, en, ro vagy zh-cn.'
             }), 400
 
     with get_conn() as conn:
@@ -1545,7 +1587,7 @@ def update_book(book_id):
             'SELECT language FROM books WHERE id=?', (book_id,)
         ).fetchone()
         if not book:
-            return jsonify({'error': 'Book not found'}), 404
+            return jsonify({'error': 'A könyv nem található'}), 404
         # Language is part of the audio cache key, but an already-generated
         # segment is served from disk without being re-keyed, so a language
         # change has to discard the cached audio or the book keeps its old
@@ -1766,7 +1808,7 @@ def get_chapter(book_id, chapter_id):
             'SELECT * FROM chapters WHERE id=? AND book_id=?', (chapter_id, book_id)
         ).fetchone()
     if not row:
-        return jsonify({'error': 'Not found'}), 404
+        return jsonify({'error': 'Nem található'}), 404
     return jsonify(dict(row))
 
 
@@ -1787,7 +1829,7 @@ def update_speaker_annotation(book_id, chapter_id):
         ' '.join(str(raw_name).strip().split()) if raw_name is not None else ''
     )
     if len(speaker_name) > 100:
-        return jsonify({'error': 'Speaker name is too long'}), 400
+        return jsonify({'error': 'A beszélő neve túl hosszú'}), 400
 
     with get_conn() as conn:
         chapter = conn.execute(
@@ -1799,7 +1841,7 @@ def update_speaker_annotation(book_id, chapter_id):
 
         units = enrichment.build_speaker_units(chapter['content'])
         if unit_index < 0 or unit_index >= len(units):
-            return jsonify({'error': 'Speaker unit not found'}), 404
+            return jsonify({'error': 'A szövegegység nem található'}), 404
         annotation_rows = conn.execute(
             'SELECT unit_index, speaker_name FROM speaker_annotations '
             'WHERE chapter_id=?',
@@ -1817,7 +1859,7 @@ def update_speaker_annotation(book_id, chapter_id):
         if not requested_scope:
             requested_scope = 'turn' if body.get('apply_to_turn') else 'sentence'
         if requested_scope not in {'sentence', 'turn_tail', 'turn', 'range'}:
-            return jsonify({'error': 'Invalid speaker correction scope'}), 400
+            return jsonify({'error': 'Érvénytelen javítási tartomány'}), 400
 
         target_indexes = [unit_index]
         range_end_unit_index = unit_index
@@ -1830,10 +1872,10 @@ def update_speaker_annotation(book_id, chapter_id):
                 range_end_unit_index < unit_index
                 or range_end_unit_index >= len(units)
             ):
-                return jsonify({'error': 'Speaker range is invalid'}), 400
+                return jsonify({'error': 'Érvénytelen beszélőtartomány'}), 400
             if range_end_unit_index - unit_index > 200:
                 return jsonify({
-                    'error': 'Speaker range cannot exceed 201 text units'
+                    'error': 'A beszélőtartomány legfeljebb 201 szövegegység lehet'
                 }), 400
             target_indexes = list(range(unit_index, range_end_unit_index + 1))
         elif requested_scope != 'sentence' and unit.get('turn_index') is not None:
@@ -2031,7 +2073,7 @@ def update_character(book_id, char_id):
     allowed = {'instruct', 'gender', 'color_hex', 'ref_text'}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
-        return jsonify({'error': 'Nothing to update'}), 400
+        return jsonify({'error': 'Nincs mit módosítani'}), 400
     set_clause = ', '.join(f'{k}=?' for k in updates)
     with get_conn() as conn:
         prev = conn.execute(
@@ -2056,11 +2098,11 @@ def preview_character(book_id, char_id):
         row = conn.execute('SELECT * FROM characters WHERE id=? AND book_id=?',
                            (char_id, book_id)).fetchone()
     if not row:
-        return jsonify({'error': 'Not found'}), 404
+        return jsonify({'error': 'Nem található'}), 404
 
     status = tts.status()
     if status['state'] != 'ready':
-        return jsonify({'error': 'Model not ready', 'status': status}), 503
+        return jsonify({'error': 'A beszédmotor még nem áll készen', 'status': status}), 503
 
     instruct = (body.get('instruct') or row['instruct'] or '').strip()
     ref_audio = row['ref_audio_path'] if row['ref_audio_path'] else None
@@ -2090,7 +2132,7 @@ def preview_character(book_id, char_id):
 def get_narrator(book_id):
     book = _load_book(book_id)
     if not book:
-        return jsonify({'error': 'Not found'}), 404
+        return jsonify({'error': 'Nem található'}), 404
     book_data = dict(book)
     return jsonify({
         'instruct': _book_narrator_instruct(book_data),
@@ -2105,7 +2147,7 @@ def update_narrator(book_id):
     body = request.get_json(force=True) or {}
     book = _load_book(book_id)
     if not book:
-        return jsonify({'error': 'Not found'}), 404
+        return jsonify({'error': 'Nem található'}), 404
     book_data = dict(book)
 
     raw_instruct = body.get('instruct')
@@ -2115,7 +2157,7 @@ def update_narrator(book_id):
         else _book_narrator_instruct(book_data)
     )
     if not instruct:
-        return jsonify({'error': 'Narrator instruct is required'}), 400
+        return jsonify({'error': 'A narrátor hangleírása kötelező'}), 400
 
     raw_mode = body.get('single_narrator_mode', _book_single_narrator_mode(book_data))
     if isinstance(raw_mode, str):
@@ -2161,11 +2203,11 @@ def preview_narrator(book_id):
     body = request.get_json(silent=True) or {}
     book = _load_book(book_id)
     if not book:
-        return jsonify({'error': 'Not found'}), 404
+        return jsonify({'error': 'Nem található'}), 404
 
     status = tts.status()
     if status['state'] != 'ready':
-        return jsonify({'error': 'Model not ready', 'status': status}), 503
+        return jsonify({'error': 'A beszédmotor még nem áll készen', 'status': status}), 503
 
     instruct = (body.get('instruct') or _book_narrator_instruct(dict(book))).strip()
     narrator_ref, saved_ref_text = _book_narrator_reference(book_id)
@@ -2190,10 +2232,10 @@ def preview_narrator(book_id):
 @app.route('/api/characters/<int:char_id>/ref-audio', methods=['POST'])
 def upload_ref_audio(char_id):
     if 'file' not in request.files:
-        return jsonify({'error': 'No file'}), 400
+        return jsonify({'error': 'Nincs kiválasztott fájl'}), 400
     f = request.files['file']
     if not f.filename or not f.filename.lower().endswith('.wav'):
-        return jsonify({'error': 'Reference audio must be a WAV file'}), 400
+        return jsonify({'error': 'A referenciahang WAV-fájl legyen'}), 400
     ref_text = (request.form.get('ref_text') or '').strip()
     with get_conn() as conn:
         row = conn.execute(
@@ -2201,7 +2243,7 @@ def upload_ref_audio(char_id):
             (char_id,),
         ).fetchone()
         if not row:
-            return jsonify({'error': 'Not found'}), 404
+            return jsonify({'error': 'Nem található'}), 404
         if row['ref_audio_path']:
             tts.invalidate_voice_prompt(row['ref_audio_path'], row['ref_text'])
     path = _save_reference_upload(f, f'ref_{char_id}')
@@ -2227,7 +2269,7 @@ def delete_ref_audio(char_id):
             (char_id,),
         ).fetchone()
         if not row:
-            return jsonify({'error': 'Not found'}), 404
+            return jsonify({'error': 'Nem található'}), 404
         conn.execute(
             'UPDATE characters SET ref_audio_path=NULL, ref_audio_name=NULL, ref_text=NULL '
             'WHERE id=?', (char_id,)
@@ -2242,10 +2284,10 @@ def delete_ref_audio(char_id):
 @app.route('/api/books/<int:book_id>/narrator-ref-audio', methods=['POST'])
 def upload_narrator_ref_audio(book_id):
     if 'file' not in request.files:
-        return jsonify({'error': 'No file'}), 400
+        return jsonify({'error': 'Nincs kiválasztott fájl'}), 400
     f = request.files['file']
     if not f.filename or not f.filename.lower().endswith('.wav'):
-        return jsonify({'error': 'Reference audio must be a WAV file'}), 400
+        return jsonify({'error': 'A referenciahang WAV-fájl legyen'}), 400
     ref_text = (request.form.get('ref_text') or '').strip()
     with get_conn() as conn:
         prev = conn.execute(
@@ -2253,7 +2295,7 @@ def upload_narrator_ref_audio(book_id):
             (book_id,),
         ).fetchone()
         if not prev:
-            return jsonify({'error': 'Not found'}), 404
+            return jsonify({'error': 'Nem található'}), 404
         if prev['narrator_ref_audio_path']:
             tts.invalidate_voice_prompt(
                 prev['narrator_ref_audio_path'], prev['narrator_ref_text']
@@ -2285,7 +2327,7 @@ def delete_narrator_ref_audio(book_id):
             (book_id,),
         ).fetchone()
         if not row:
-            return jsonify({'error': 'Not found'}), 404
+            return jsonify({'error': 'Nem található'}), 404
         path = row['narrator_ref_audio_path']
         ref_text = row['narrator_ref_text']
         conn.execute(
@@ -2323,7 +2365,7 @@ def tts_load():
     if _character_analysis_is_active():
         return jsonify({
             'ok': False,
-            'error': 'Character analysis is running; TTS remains unloaded to protect VRAM.',
+            'error': 'Szereplőelemzés fut; a beszédmotor a videomemória védelmében addig nem töltődik be.',
         }), 409
     tts.load_async()
     return jsonify({'ok': True})
@@ -2344,7 +2386,7 @@ def tts_generate():
 
     status = tts.status()
     if status['state'] != 'ready':
-        return jsonify({'error': 'Model not ready', 'status': status}), 503
+        return jsonify({'error': 'A beszédmotor még nem áll készen', 'status': status}), 503
 
     with get_conn() as conn:
         seg = conn.execute(
@@ -2374,7 +2416,7 @@ def tts_generate():
                     ).fetchone()
 
     if not seg:
-        return jsonify({'error': 'Segment index out of range'}), 404
+        return jsonify({'error': 'A szakasz sorszáma érvénytelen'}), 404
 
     seg = dict(seg)
     if seg.get('audio_path') and os.path.exists(seg['audio_path']):
@@ -2412,7 +2454,7 @@ def tts_generate():
     # single-segment synth (reader prewarm / playback buffer).
     if _export_exclusive_active():
         return jsonify({
-            'error': 'Export in progress — interactive TTS is paused until export finishes.',
+            'error': 'Export fut – az azonnali felolvasás az export végéig szünetel.',
             'export_busy': True,
         }), 503
 
@@ -3021,7 +3063,7 @@ def generate_chapter_audio(book_id, chapter_id):
         active = _chapter_generation_jobs.get(active_id) if active_id else None
         if active and active.get('state') in ('pending', 'running'):
             return jsonify({
-                'error': 'Another chapter or export is already generating audio.',
+                'error': 'Egy másik fejezet vagy export már hangot készít.',
                 'busy_job_id': active_id,
                 'busy_chapter_id': active.get('chapter_id'),
             }), 409
@@ -3029,7 +3071,7 @@ def generate_chapter_audio(book_id, chapter_id):
             return jsonify({'error': 'An audio export is already running.'}), 409
 
     if _export_exclusive_active():
-        return jsonify({'error': 'Audio generation or export is already running.'}), 409
+        return jsonify({'error': 'Már fut egy hanggenerálás vagy export.'}), 409
     if tts.status()['state'] != 'ready':
         return jsonify({'error': 'A beszédmotor még nem áll készen'}), 503
 
@@ -3056,7 +3098,7 @@ def generate_chapter_audio(book_id, chapter_id):
             active = _chapter_generation_jobs.get(active_id) if active_id else None
             if active and active.get('state') in ('pending', 'running'):
                 return jsonify({
-                    'error': 'Another chapter or export is already generating audio.',
+                    'error': 'Egy másik fejezet vagy export már hangot készít.',
                     'busy_job_id': active_id,
                     'busy_chapter_id': active.get('chapter_id'),
                 }), 409
@@ -3114,637 +3156,44 @@ def _get_chapter_segments(chapter_id, book_id):
     return [dict(r) for r in rows]
 
 
-def _make_export_job(job_type: str, input_data: dict) -> tuple[str, dict]:
-    stored = jobs.create_job(
-        job_type,
-        input_data,
-        book_id=input_data.get('book_id'),
-        chapter_id=input_data.get('chapter_id'),
-    )
-    job_id = stored['id']
-    job = _legacy_job(stored)
-    _export_jobs[job_id] = job
-    return job_id, job
 
 
-EXPORT_AUDIO_FORMATS = ('wav', 'mp3', 'm4b', 'opus', 'flac')
-EXPORT_PACKAGES = ('none', 'epub3', 'audiobookshelf', 'acx', 'daw')
-DEFAULT_INTRO_TEMPLATE = '{title}. Írta: {author}. Felolvassa: {narrator}.'
-DEFAULT_OUTRO_TEMPLATE = 'Vége. {title}. Írta: {author}.'
 
 
-def _export_options(body: dict) -> dict:
-    package = str(body.get('package') or 'none')
-    if package not in EXPORT_PACKAGES:
-        raise ValueError('Ismeretlen kiadási csomag.')
-    return {
-        'package': package,
-        'intro': bool(body.get('intro', False)),
-        'outro': bool(body.get('outro', False)),
-        'sample': bool(body.get('sample', package == 'acx')),
-        'abs_upload': bool(body.get('abs_upload', False)),
-    }
 
 
-def _book_background(book) -> dict | None:
-    book = dict(book) if book else {}
-    path = book.get('bg_music_path')
-    if path and os.path.isfile(path):
-        try:
-            level = float(book.get('bg_music_db') if book.get('bg_music_db') is not None else -22)
-        except (TypeError, ValueError):
-            level = -22.0
-        return {'path': path, 'db': max(-40.0, min(-6.0, level))}
-    return None
 
 
-def _credit_text(template: str, book: dict) -> str:
-    narrator = (book.get('narrator_credit') or app_settings.get('narrator_credit', '')
-                or 'mesterséges hang')
-    values = {
-        'title': book.get('title') or '', 'author': book.get('author') or '',
-        'narrator': narrator, 'series': book.get('series') or '',
-        'cím': book.get('title') or '', 'szerző': book.get('author') or '',
-        'narrátor': narrator,
-    }
-    try:
-        text = str(template or '').format(**values)
-    except (KeyError, IndexError, ValueError):
-        text = str(template or '')
-    return ' '.join(text.split())
 
 
-def _credit_chapter(book_id: int, book: dict, kind: str) -> dict | None:
-    """Synthesize an opening or closing credit with the narrator's voice."""
-    template = app_settings.get(
-        f'export_{kind}_template',
-        DEFAULT_INTRO_TEMPLATE if kind == 'intro' else DEFAULT_OUTRO_TEMPLATE,
-    )
-    text = _credit_text(template, book)
-    if not text:
-        return None
-    ref_audio, ref_text = _book_narrator_reference(book_id)
-    instruct = book.get('narrator_instruct') or _default_narrator_instruct()
-    result = tts.generate(
-        text=text, instruct=instruct, ref_audio=ref_audio, ref_text=ref_text,
-        speed=1.0, language=book.get('language') or None,
-    )
-    title = 'Nyitó szöveg' if kind == 'intro' else 'Záró szöveg'
-    return {
-        'chapter_number': 0 if kind == 'intro' else 9999,
-        'chapter_title': title,
-        'segments': [{
-            'audio_path': result['audio_path'], 'duration_sec': result['duration_sec'],
-            'cache_key': result['cache_key'], 'text': text, 'ends_paragraph': 1,
-            'block_kind': 'paragraph', 'character_name': None, 'segment_index': 0,
-        }],
-    }
 
 
-def _publish_metadata(book: dict) -> dict:
-    return {
-        'title': book.get('title') or '', 'author': book.get('author') or '',
-        'language': book.get('language') or 'hu',
-        'narrator': book.get('narrator_credit') or app_settings.get('narrator_credit', '') or '',
-        'description': book.get('description') or '', 'publisher': book.get('publisher') or '',
-        'published': book.get('published') or '', 'series': book.get('series') or '',
-        'series_index': book.get('series_index') or '', 'cover_b64': book.get('cover_b64'),
-        'identifier': f"auris-book-{book.get('id')}",
-    }
 
 
-def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: str, sub_fmt: str):
-    job = _export_jobs[job_id]
-    export_pool: TTSExportPool | None = None
-    _export_exclusive_begin()
-    try:
-        _check_job_cancelled(job)
-        job['state'] = 'running'
-        job['message'] = 'Szövegrészek betöltése…'
-        _persist_job(job)
-        with get_conn() as conn:
-            ch = conn.execute('SELECT * FROM chapters WHERE id=? AND book_id=?',
-                              (chapter_id, book_id)).fetchone()
-            book = conn.execute(
-                'SELECT title, author FROM books WHERE id=?', (book_id,)
-            ).fetchone()
-        if not ch:
-            job['state'] = 'failed'
-            job['error'] = 'A fejezet nem található'
-            job['message'] = 'Az export nem sikerült'
-            _persist_job(job)
-            return
-        segs = _get_chapter_segments(chapter_id, book_id)
-        job['total'] = len(segs)
-        job['done'] = 0
-        job['message'] = f'Hang készítése (0/{len(segs)})'
-        export_pool = _start_export_pool(job)
-        _ensure_audio_for_chapter(
-            book_id, chapter_id, segs, job, export_pool=export_pool
-        )
-        _check_job_cancelled(job)
-        job['message'] = 'Hangok összefűzése…'
-        colors = _get_char_colors(book_id)
-        mastering = bool(app_settings.get('audio_mastering', True))
-        job['message'] = (
-            'Merging and mastering audio...' if mastering else 'Hangok összefűzése…'
-        )
-        with get_conn() as conn:
-            full_book = conn.execute('SELECT * FROM books WHERE id=?', (book_id,)).fetchone()
-        background = _book_background(full_book)
-        options = (job.get('input') or {}).get('options') or {}
-        if audio_fmt == 'm4b':
-            result = exporter.export_m4b(
-                book['title'], [{
-                    'chapter_number': 1,
-                    'chapter_title': ch['title'],
-                    'segments': segs,
-                }], colors, sub_fmt=sub_fmt, book_author=book['author'],
-                mastering=mastering, book_metadata=dict(full_book),
-                on_progress=lambda message: _export_stage(job, message),
-                check_cancelled=lambda: _check_job_cancelled(job),
-                background=background,
-            )
-        else:
-            result = exporter.export_single_chapter(
-                ch['title'], book['title'], segs, colors, audio_fmt, sub_fmt,
-                mastering=mastering,
-                book_author=book['author'],
-                background=background,
-            )
-        if options.get('package') == 'daw':
-            from core import publish
-            _export_stage(job, 'DAW-csomag készítése…')
-            daw_zip = os.path.join(
-                os.path.dirname(result['audio_path']),
-                f"{exporter._safe_name(ch['title'])}_daw.zip",
-            )
-            timeline = result.get('timeline') or []
-            publish.build_daw_package(ch['title'], timeline, daw_zip)
-            result['audio_path'] = daw_zip
-        job['state'] = 'complete'
-        job['message'] = 'Elkészült'
-        job['result'] = {
-            'audio_path': result['audio_path'],
-            'subtitle_path': result.get('subtitle_path'),
-            'audio_download': f'/api/jobs/{job_id}/download/audio',
-            'subtitle_download': (
-                f'/api/jobs/{job_id}/download/subtitle'
-                if result.get('subtitle_path') else None
-            ),
-            'mastering_applied': result.get('mastering_applied', False),
-            'mastering_warning': result.get('mastering_warning'),
-        }
-        _persist_job(job)
-    except JobCancelled:
-        jobs.mark_cancelled(job_id, 'Export cancelled after current batch')
-        job['state'] = 'cancelled'
-    except Exception as e:
-        log.exception('Export job %s failed', job_id)
-        job['state'] = 'failed'
-        job['error'] = str(e)
-        job['message'] = 'Az export nem sikerült'
-        _persist_job(job)
-    finally:
-        _close_orphaned_job(job_id)
-        if export_pool is not None:
-            export_pool.close()
-        _export_exclusive_end()
 
 
-def _export_stage(job, message):
-    job['message'] = message
-    _persist_job(job)
 
 
-def _run_chapterwise_export(
-    job_id: str,
-    book_id: int,
-    audio_fmt: str,
-    sub_fmt: str,
-    chapter_numbers: list[int],
-):
-    job = _export_jobs[job_id]
-    export_pool: TTSExportPool | None = None
-    _export_exclusive_begin()
-    try:
-        _check_job_cancelled(job)
-        job['state'] = 'running'
-        job['message'] = 'Fejezetek betöltése…'
-        _persist_job(job)
-        with get_conn() as conn:
-            book = conn.execute('SELECT * FROM books WHERE id=?', (book_id,)).fetchone()
-            chapters = conn.execute(
-                'SELECT id, title FROM chapters WHERE book_id=? ORDER BY order_num', (book_id,)
-            ).fetchall()
-        chapters_data: list[dict] = []
-        selected = set(chapter_numbers)
-        for chapter_number, ch in enumerate(chapters, 1):
-            if chapter_number not in selected:
-                continue
-            segs = _get_chapter_segments(ch['id'], book_id)
-            chapters_data.append({
-                'chapter_number': chapter_number,
-                'chapter_title': ch['title'],
-                'ch_id': ch['id'],
-                'segments': segs,
-            })
-        total = sum(len(c['segments']) for c in chapters_data)
-        job['total'] = total
-        job['done'] = 0
-        job['message'] = f'Hang készítése (0/{total})'
-        export_pool = _start_export_pool(job)
-        # One synthesis pass for all selected chapters: voice groups and
-        # length-sorted GPU packs span chapter boundaries, so packs stay full
-        # instead of every chapter ending with a half-empty batch. Segment
-        # dicts are shared, so results land in each chapter's list.
-        all_segments = [
-            seg for ch_data in chapters_data for seg in ch_data['segments']
-        ]
-        _check_job_cancelled(job)
-        _ensure_audio_for_chapter(
-            book_id,
-            chapters_data[0]['ch_id'] if chapters_data else 0,
-            all_segments,
-            job,
-            export_pool=export_pool,
-        )
-        _check_job_cancelled(job)
-        mastering = bool(app_settings.get('audio_mastering', True))
-        job['message'] = (
-            'Fejezetfájlok írása és masterelése…'
-            if mastering else 'Fejezetfájlok írása…'
-        )
-        colors = _get_char_colors(book_id)
-        export_chapters = [c for c in chapters_data if c['segments']]
-        options = (job.get('input') or {}).get('options') or {}
-        package = options.get('package', 'none')
-        book_dict = dict(book)
-        background = _book_background(book)
-        if options.get('intro'):
-            _export_stage(job, 'Nyitó szöveg felolvasása…')
-            intro = _credit_chapter(book_id, book_dict, 'intro')
-            if intro:
-                export_chapters.insert(0, intro)
-        if options.get('outro'):
-            _export_stage(job, 'Záró szöveg felolvasása…')
-            outro = _credit_chapter(book_id, book_dict, 'outro')
-            if outro:
-                export_chapters.append(outro)
-        for number, chapter in enumerate(export_chapters, 1):
-            chapter['chapter_number'] = number
-        package_result = {}
-        if package == 'epub3':
-            audio_fmt = 'mp3'
-        elif package == 'acx':
-            audio_fmt = 'mp3'
-        if audio_fmt == 'm4b':
-            result = exporter.export_m4b(
-                book['title'], export_chapters, colors,
-                sub_fmt=sub_fmt, book_author=book['author'],
-                mastering=mastering, book_metadata=book_dict,
-                on_progress=lambda message: _export_stage(job, message),
-                check_cancelled=lambda: _check_job_cancelled(job),
-                background=background,
-            )
-            download_path = result['audio_path']
-            audio_files = [result['audio_path']]
-        else:
-            # One subfolder per target, so an Opus export never ships the
-            # MP3 files of an earlier export in its ZIP.
-            target_dir = os.path.join(
-                exporter._book_export_dir(book['author'], book['title']),
-                package if package != 'none' else audio_fmt,
-            )
-            if os.path.isdir(target_dir):
-                shutil.rmtree(target_dir, ignore_errors=True)
-            result = exporter.export_chapter_folder(
-                book['title'], export_chapters,
-                colors, audio_fmt, sub_fmt,
-                mastering=mastering,
-                book_author=book['author'],
-                acx=package == 'acx',
-                background=background,
-                output_dir=target_dir,
-            )
-            audio_files = [item['audio_path'] for item in result['chapters']]
-            download_path = None
-        if package != 'none' or options.get('sample'):
-            from core import publish
-            meta = _publish_metadata(book_dict)
-            folder = result.get('directory_path') or os.path.dirname(result['audio_path'])
-            if options.get('sample') and audio_files:
-                _export_stage(job, 'Ötperces minta készítése…')
-                sample_path = os.path.join(folder, f"{exporter._safe_name(book['title'])}_minta.mp3")
-                publish.retail_sample(audio_files[0], sample_path)
-                package_result['sample_path'] = sample_path
-            if package == 'epub3':
-                _export_stage(job, 'EPUB3 felolvasós könyv készítése…')
-                chapters_for_epub = [
-                    {'title': chapter['chapter_title'], 'audio_path': item['audio_path'],
-                     'segments': item.get('timeline') or []}
-                    for chapter, item in zip(export_chapters, result['chapters'])
-                ]
-                epub_path = os.path.join(folder, f"{exporter._safe_name(book['title'])}_felolvasos.epub")
-                publish.build_epub3_media_overlay(meta, chapters_for_epub, epub_path)
-                download_path = epub_path
-            elif package == 'audiobookshelf':
-                _export_stage(job, 'Audiobookshelf-mappa készítése…')
-                abs_root = os.path.join(exporter.EXPORTS_DIR, 'audiobookshelf')
-                abs_folder = publish.build_audiobookshelf_folder(
-                    meta, audio_files, abs_root, overwrite=True,
-                    chapters=[{'title': chapter['chapter_title']} for chapter in export_chapters]
-                    if len(audio_files) > 1 else None,
-                )
-                package_result['audiobookshelf_folder'] = abs_folder
-                download_path = shutil.make_archive(abs_folder, 'zip', abs_folder)
-                if options.get('abs_upload'):
-                    _export_stage(job, 'Feltöltés az Audiobookshelf szerverre…')
-                    package_result['audiobookshelf_upload'] = publish.upload_to_audiobookshelf(
-                        abs_folder, app_settings.get('abs_url', ''),
-                        app_settings.get('abs_api_token', ''),
-                        app_settings.get('abs_library_id', ''),
-                        folder_id=app_settings.get('abs_folder_id', '') or None,
-                    )
-        if download_path is None:
-            download_path = shutil.make_archive(
-                result['directory_path'], 'zip', result['directory_path']
-            )
-        job['state'] = 'complete'
-        job['message'] = 'Elkészült'
-        job['result'] = {
-            'export_path': result.get('directory_path') or result.get('audio_path'),
-            'download_path': download_path,
-            'download': f'/api/jobs/{job_id}/download/export',
-            'subtitle_path': result.get('subtitle_path'),
-            'subtitle_download': (
-                f'/api/jobs/{job_id}/download/subtitle'
-                if result.get('subtitle_path') else None
-            ),
-            'chapter_count': result.get('chapter_count', len(export_chapters)),
-            'mastering_applied': result.get('mastering_applied', False),
-            'mastering_warning': result.get('mastering_warning'),
-            'mastered_chapters': sum(
-                1 for chapter in result['chapters']
-                if chapter.get('mastering_applied')
-            ) if result.get('chapters') else 0,
-            'package': package,
-            **package_result,
-        }
-        _persist_job(job)
-    except JobCancelled:
-        jobs.mark_cancelled(job_id, 'Export cancelled after current batch')
-        job['state'] = 'cancelled'
-    except Exception as e:
-        log.exception('Export job %s failed', job_id)
-        job['state'] = 'failed'
-        job['error'] = str(e)
-        job['message'] = 'Az export nem sikerült'
-        _persist_job(job)
-    finally:
-        _close_orphaned_job(job_id)
-        if export_pool is not None:
-            export_pool.close()
-        _export_exclusive_end()
 
 
-def _resolve_sub_fmt(book_id: int, requested: str) -> str:
-    if requested == 'none':
-        return 'none'
-    book = _load_book(book_id)
-    if book and _book_single_narrator_mode(dict(book)):
-        return 'srt'
-    return requested
 
 
-@app.route('/api/books/<int:book_id>/export/chapter/<int:chapter_id>', methods=['POST'])
-def export_chapter(book_id, chapter_id):
-    jobs.ensure_jobs()
-    body = request.get_json(force=True) or {}
-    audio_fmt = body.get('audio_fmt', 'wav')
-    sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
-
-    if audio_fmt not in EXPORT_AUDIO_FORMATS or sub_fmt not in ('srt', 'ass', 'none'):
-        return jsonify({'error': 'Nem támogatott exportformátum'}), 400
-    try:
-        options = _export_options(body)
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'A beszédmotor még nem áll készen'}), 503
-
-    with _work_dispatch_lock:
-        conflict = _work_conflict_response()
-        if conflict is not None:
-            return conflict
-        with _chapter_generation_lock:
-            active_id = _chapter_generation_active_job_id
-            active = _chapter_generation_jobs.get(active_id) if active_id else None
-            if active and active.get('state') in ('pending', 'running'):
-                return jsonify({'error': 'Egy fejezethang már készül.'}), 409
-        job_id, _ = _make_export_job('export_chapter', {
-            'book_id': book_id, 'chapter_id': chapter_id,
-            'audio_fmt': audio_fmt, 'sub_fmt': sub_fmt, 'options': options,
-        })
-        _launch_durable_job(jobs.get_job(job_id))
-        return jsonify({'job_id': job_id})
 
 
-@app.route('/api/books/<int:book_id>/export/full', methods=['POST'])
-def export_full(book_id):
-    jobs.ensure_jobs()
-    body = request.get_json(force=True) or {}
-    audio_fmt = body.get('audio_fmt', 'wav')
-    sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
-
-    if audio_fmt not in EXPORT_AUDIO_FORMATS or sub_fmt not in ('srt', 'ass', 'none'):
-        return jsonify({'error': 'Nem támogatott exportformátum'}), 400
-    try:
-        options = _export_options(body)
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-    if options['abs_upload'] and not (
-        app_settings.get('abs_url') and app_settings.get('abs_api_token')
-        and app_settings.get('abs_library_id')
-    ):
-        return jsonify({'error': 'Az Audiobookshelf-feltöltéshez add meg a szerver címét, '
-                                 'a tokent és a könyvtárat a Beállításokban.'}), 400
-
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'A beszédmotor még nem áll készen'}), 503
-
-    with get_conn() as conn:
-        chapter_count = conn.execute(
-            'SELECT COUNT(*) FROM chapters WHERE book_id=?', (book_id,)
-        ).fetchone()[0]
-    chapter_numbers = exporter.parse_chapter_selection('all', chapter_count)
-    with _work_dispatch_lock:
-        conflict = _work_conflict_response()
-        if conflict is not None:
-            return conflict
-        with _chapter_generation_lock:
-            active_id = _chapter_generation_active_job_id
-            active = _chapter_generation_jobs.get(active_id) if active_id else None
-            if active and active.get('state') in ('pending', 'running'):
-                return jsonify({'error': 'Egy fejezethang már készül.'}), 409
-        job_id, _ = _make_export_job('export_book', {
-            'book_id': book_id, 'audio_fmt': audio_fmt, 'sub_fmt': sub_fmt,
-            'chapter_numbers': chapter_numbers, 'options': options,
-        })
-        _launch_durable_job(jobs.get_job(job_id))
-        return jsonify({'job_id': job_id})
 
 
-@app.route('/api/books/<int:book_id>/export/chapterwise', methods=['POST'])
-def export_chapterwise(book_id):
-    jobs.ensure_jobs()
-    body = request.get_json(force=True) or {}
-    audio_fmt = body.get('audio_fmt', 'wav')
-    sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
-
-    if audio_fmt not in EXPORT_AUDIO_FORMATS or sub_fmt not in ('srt', 'ass', 'none'):
-        return jsonify({'error': 'Nem támogatott exportformátum'}), 400
-    try:
-        options = _export_options(body)
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-    if options['abs_upload'] and not (
-        app_settings.get('abs_url') and app_settings.get('abs_api_token')
-        and app_settings.get('abs_library_id')
-    ):
-        return jsonify({'error': 'Az Audiobookshelf-feltöltéshez add meg a szerver címét, '
-                                 'a tokent és a könyvtárat a Beállításokban.'}), 400
-
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'A beszédmotor még nem áll készen'}), 503
-
-    with get_conn() as conn:
-        chapter_count = conn.execute(
-            'SELECT COUNT(*) FROM chapters WHERE book_id=?', (book_id,)
-        ).fetchone()[0]
-    try:
-        chapter_numbers = exporter.parse_chapter_selection(
-            body.get('chapters'), chapter_count
-        )
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-    with _work_dispatch_lock:
-        conflict = _work_conflict_response()
-        if conflict is not None:
-            return conflict
-        with _chapter_generation_lock:
-            active_id = _chapter_generation_active_job_id
-            active = _chapter_generation_jobs.get(active_id) if active_id else None
-            if active and active.get('state') in ('pending', 'running'):
-                return jsonify({'error': 'Egy fejezethang már készül.'}), 409
-        job_id, _ = _make_export_job('export_book', {
-            'book_id': book_id, 'audio_fmt': audio_fmt, 'sub_fmt': sub_fmt,
-            'chapter_numbers': chapter_numbers, 'options': options,
-        })
-        _launch_durable_job(jobs.get_job(job_id))
-        return jsonify({'job_id': job_id})
 
 
-@app.route('/api/books/<int:book_id>/background-music', methods=['POST'])
-def upload_background_music(book_id):
-    f = request.files.get('file')
-    allowed = ('.mp3', '.wav', '.ogg', '.flac', '.m4a', '.opus')
-    if not f or not f.filename or not f.filename.lower().endswith(allowed):
-        return jsonify({'error': 'Zenefájl szükséges (MP3, WAV, OGG, FLAC, M4A vagy Opus).'}), 400
-    book = _load_book(book_id)
-    if not book:
-        return jsonify({'error': 'Not found'}), 404
-    suffix = os.path.splitext(f.filename)[1].lower()
-    path = os.path.join(UPLOAD_DIR, f'bg_music_{book_id}_{uuid.uuid4().hex[:8]}{suffix}')
-    f.save(path)
-    with get_conn() as conn:
-        conn.execute('UPDATE books SET bg_music_path=?, bg_music_name=? WHERE id=?',
-                     (path, os.path.basename(f.filename), book_id))
-    if book['bg_music_path'] and book['bg_music_path'] != path:
-        _delete_file_if_exists(book['bg_music_path'])
-    return jsonify({'ok': True, 'name': os.path.basename(f.filename)})
 
 
-@app.route('/api/books/<int:book_id>/background-music', methods=['DELETE'])
-def delete_background_music(book_id):
-    book = _load_book(book_id)
-    if not book:
-        return jsonify({'error': 'Not found'}), 404
-    with get_conn() as conn:
-        conn.execute('UPDATE books SET bg_music_path=NULL, bg_music_name=NULL WHERE id=?', (book_id,))
-    _delete_file_if_exists(book['bg_music_path'])
-    return jsonify({'ok': True})
 
 
-@app.route('/api/books/<int:book_id>/publishing', methods=['GET', 'PATCH'])
-def book_publishing(book_id):
-    book = _load_book(book_id)
-    if not book:
-        return jsonify({'error': 'Not found'}), 404
-    if request.method == 'PATCH':
-        body = request.get_json(silent=True) or {}
-        updates = {}
-        if 'narrator_credit' in body:
-            updates['narrator_credit'] = str(body.get('narrator_credit') or '').strip()[:200] or None
-        if 'bg_music_db' in body:
-            try:
-                updates['bg_music_db'] = max(-40.0, min(-6.0, float(body['bg_music_db'])))
-            except (TypeError, ValueError):
-                return jsonify({'error': 'Érvénytelen zenehangerő.'}), 400
-        if updates:
-            with get_conn() as conn:
-                conn.execute(
-                    'UPDATE books SET ' + ', '.join(f'{k}=?' for k in updates) + ' WHERE id=?',
-                    (*updates.values(), book_id),
-                )
-        book = _load_book(book_id)
-    return jsonify({
-        'narrator_credit': book['narrator_credit'] or '',
-        'bg_music_name': book['bg_music_name'] or '',
-        'bg_music_db': book['bg_music_db'] if book['bg_music_db'] is not None else -22,
-        'intro_preview': _credit_text(
-            app_settings.get('export_intro_template', DEFAULT_INTRO_TEMPLATE), dict(book)),
-        'outro_preview': _credit_text(
-            app_settings.get('export_outro_template', DEFAULT_OUTRO_TEMPLATE), dict(book)),
-    })
 
 
-@app.route('/api/settings/abs-libraries', methods=['POST'])
-def audiobookshelf_libraries():
-    from core import publish
-    body = request.get_json(silent=True) or {}
-    url = str(body.get('url') or app_settings.get('abs_url', '')).strip()
-    token = security.resolve_secret(body.get('token'), app_settings.get('abs_api_token', ''))
-    try:
-        return jsonify({'libraries': publish.list_libraries(url, token)})
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
 
 
-@app.route('/api/export/status/<job_id>')
-def export_job_status(job_id):
-    job = _export_jobs.get(job_id)
-    if not job:
-        stored = jobs.get_job(job_id)
-        if not stored or stored['type'] not in ('export_chapter', 'export_book'):
-            return jsonify({'error': 'Ismeretlen feladat'}), 404
-        return jsonify({**stored, **_legacy_job(stored)})
-    # Recompute ETA on every poll so the UI keeps moving while a GPU batch runs.
-    _refresh_export_job_fields(job)
-    return jsonify(job)
 
 
-@app.route('/api/export/download')
-def export_download():
-    path = request.args.get('path', '')
-    abs_path = os.path.abspath(path)
-    if not _is_inside_exports(abs_path):
-        return 'Forbidden', 403
-    if not os.path.exists(abs_path):
-        return 'Not found', 404
-    return send_file(abs_path, as_attachment=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -3802,323 +3251,24 @@ def docs_page():
     return render_template('docs.html')
 
 
-@app.route('/api/settings', methods=['GET'])
-def get_settings():
-    return jsonify(security.mask_secrets(app_settings.load()))
 
 
-@app.route('/api/settings', methods=['POST'])
-def save_settings():
-    body = request.get_json(force=True) or {}
-    previous = app_settings.load()
-    allowed = {
-        'tts_engine',
-        'model_source', 'model_path', 'model_repo', 'hf_endpoint',
-        'higgs_model_source', 'higgs_model_path', 'higgs_model_repo',
-        'higgs_temperature', 'higgs_top_p', 'higgs_top_k',
-        'higgs_max_new_tokens', 'higgs_seed', 'higgs_default_emotion',
-        'higgs_default_style', 'higgs_default_expressive', 'higgs_prompt_mode',
-        'narrator_instruct', 'single_narrator_mode', 'default_speed', 'audio_format',
-        'subtitle_format', 'theme', 'font_size', 'font_family', 'line_height',
-        'normalize_text', 'tts_num_step', 'tts_batch_size', 'tts_coalesce_chars',
-        'audio_mastering', 'voice_design_anchor',
-        'piper_voice', 'supertonic_voice', 'supertonic_steps',
-        'moss_seed', 'moss_temperature', 'moss_top_p', 'moss_top_k',
-        'trim_segment_silence', 'export_room_tone',
-        'narrator_credit', 'export_intro_template', 'export_outro_template',
-        'abs_url', 'abs_api_token', 'abs_library_id', 'abs_folder_id',
-        'qa_cer_warn', 'qa_cer_fail', 'qa_max_takes', 'asr_model', 'asr_keep_loaded',
-        'tts_accel', 'tts_export_workers',
-        'character_detection_mode', 'llm_provider',
-        'llm_base_url', 'llm_api_key', 'llm_model',
-        'openai_api_key', 'openai_model',
-        'llm_timeout_sec', 'llm_max_output_tokens', 'llm_max_characters',
-        'llm_batch_chars',
-    }
-    updates = security.drop_masked_secrets(
-        {k: v for k, v in body.items() if k in allowed}
-    )
-    for repo_key in ('model_repo', 'higgs_model_repo'):
-        if repo_key in updates and not security.valid_hf_repo(updates[repo_key]):
-            return jsonify({'error': 'Érvénytelen Hugging Face repó-azonosító.'}), 400
-    if 'tts_engine' in updates:
-        from core.tts_router import ENGINE_NAMES
-        engine = str(updates['tts_engine'] or 'omnivoice').strip().lower()
-        updates['tts_engine'] = engine if engine in ENGINE_NAMES else 'omnivoice'
-    if 'higgs_model_source' in updates:
-        source = str(updates['higgs_model_source'] or 'download').strip().lower()
-        updates['higgs_model_source'] = source if source in ('local', 'download') else 'download'
-    if 'higgs_prompt_mode' in updates:
-        mode = str(updates['higgs_prompt_mode'] or 'raw').strip().lower()
-        updates['higgs_prompt_mode'] = mode if mode in ('raw', 'expressive') else 'raw'
-    if 'character_detection_mode' in updates:
-        mode = str(updates['character_detection_mode'] or 'legacy').strip().lower()
-        updates['character_detection_mode'] = (
-            mode if mode in ('legacy', 'llm') else 'legacy'
-        )
-    if 'llm_provider' in updates:
-        provider = str(updates['llm_provider'] or 'local').strip().lower()
-        updates['llm_provider'] = (
-            provider if provider in ('local', 'openai') else 'local'
-        )
-    if 'llm_base_url' in updates:
-        updates['llm_base_url'] = str(updates['llm_base_url'] or '').strip().rstrip('/')
-    if 'llm_model' in updates:
-        updates['llm_model'] = str(updates['llm_model'] or '').strip()
-    if 'openai_model' in updates:
-        updates['openai_model'] = str(updates['openai_model'] or '').strip()
-    for key, default, low, high in (
-        ('llm_timeout_sec', 600, 15, 3600),
-        ('llm_max_output_tokens', 8192, 512, 32768),
-        ('llm_max_characters', 60, 1, 200),
-        ('llm_batch_chars', 10000, 10000, 500000),
-    ):
-        if key in updates:
-            try:
-                updates[key] = max(low, min(int(updates[key]), high))
-            except (TypeError, ValueError):
-                updates[key] = default
-    for key, default, low, high in (
-        ('higgs_temperature', 0.8, 0.0, 2.0),
-        ('higgs_top_p', 0.95, 0.0, 1.0),
-    ):
-        if key in updates:
-            try:
-                updates[key] = max(low, min(float(updates[key]), high))
-            except (TypeError, ValueError):
-                updates[key] = default
-    for key, default, low, high in (
-        ('higgs_top_k', 50, 0, 200),
-        ('higgs_max_new_tokens', 1024, 128, 4096),
-        ('higgs_seed', -1, -1, 2147483647),
-    ):
-        if key in updates:
-            try:
-                updates[key] = max(low, min(int(updates[key]), high))
-            except (TypeError, ValueError):
-                updates[key] = default
-    if 'normalize_text' in updates:
-        updates['normalize_text'] = bool(updates['normalize_text'])
-    if 'audio_mastering' in updates:
-        updates['audio_mastering'] = bool(updates['audio_mastering'])
-    if 'voice_design_anchor' in updates:
-        updates['voice_design_anchor'] = bool(updates['voice_design_anchor'])
-    from core.local_engines import PIPER_VOICES, SUPERTONIC_VOICES
-    if 'piper_voice' in updates and updates['piper_voice'] not in PIPER_VOICES:
-        updates['piper_voice'] = 'anna'
-    if 'supertonic_voice' in updates and updates['supertonic_voice'] not in SUPERTONIC_VOICES:
-        updates['supertonic_voice'] = 'F1'
-    for key in ('narrator_credit', 'export_intro_template', 'export_outro_template',
-                'abs_library_id', 'abs_folder_id'):
-        if key in updates:
-            updates[key] = str(updates[key] or '').strip()[:400]
-    if 'abs_url' in updates:
-        url = str(updates['abs_url'] or '').strip().rstrip('/')
-        if url and not re.match(r'^https?://[^\s/]+', url):
-            return jsonify({'error': 'Az Audiobookshelf címe http:// vagy https:// kezdetű legyen.'}), 400
-        updates['abs_url'] = url
-    for key in ('trim_segment_silence', 'export_room_tone', 'asr_keep_loaded'):
-        if key in updates:
-            updates[key] = bool(updates[key])
-    if 'asr_model' in updates:
-        model = str(updates['asr_model'] or '').strip()
-        if model and not security.valid_hf_repo(model):
-            return jsonify({'error': 'Érvénytelen Hugging Face repó-azonosító.'}), 400
-        updates['asr_model'] = model
-    for key, low, high, cast in (
-        ('qa_cer_warn', 0.0, 1.0, float), ('qa_cer_fail', 0.01, 1.0, float),
-        ('qa_max_takes', 0, 8, int),
-        ('supertonic_steps', 4, 32, int), ('moss_seed', -1, 2**31 - 1, int),
-        ('moss_temperature', 0.1, 3.0, float), ('moss_top_p', 0.05, 1.0, float),
-        ('moss_top_k', 1, 200, int),
-    ):
-        if key in updates:
-            try:
-                updates[key] = max(low, min(high, cast(updates[key])))
-            except (TypeError, ValueError):
-                updates.pop(key)
-    if 'tts_num_step' in updates:
-        try:
-            step = int(updates['tts_num_step'])
-        except (TypeError, ValueError):
-            step = 16
-        from core.tts_engine import ALLOWED_TTS_NUM_STEPS
-        if step not in ALLOWED_TTS_NUM_STEPS:
-            step = min(ALLOWED_TTS_NUM_STEPS, key=lambda s: abs(s - step))
-        updates['tts_num_step'] = step
-    if 'tts_batch_size' in updates:
-        try:
-            # 0 = auto (VRAM-based). Positive = fixed batch size.
-            updates['tts_batch_size'] = max(0, min(int(updates['tts_batch_size']), 48))
-        except (TypeError, ValueError):
-            updates['tts_batch_size'] = 0
-    if 'tts_coalesce_chars' in updates:
-        # Kept in the settings schema for backward compatibility, but exact
-        # spoken boundaries require this optimization to stay disabled.
-        updates['tts_coalesce_chars'] = 0
-    if 'tts_accel' in updates:
-        mode = str(updates['tts_accel'] or 'auto').strip().lower()
-        if mode not in ('off', 'auto', 'eager', 'cuda_graph', 'triton', 'hybrid'):
-            mode = 'auto'
-        updates['tts_accel'] = mode
-    if 'tts_export_workers' in updates:
-        try:
-            updates['tts_export_workers'] = max(
-                0, min(int(updates['tts_export_workers']), 2)
-            )
-        except (TypeError, ValueError):
-            updates['tts_export_workers'] = 0
-    result = app_settings.save(updates)
-
-    # Accel mode change requires model reload to re-wrap forward().
-    if 'tts_accel' in updates and updates['tts_accel'] != previous.get('tts_accel'):
-        pass  # user can hit Reload TTS; do not force mid-request
-
-    # Engine/model selection is applied on explicit Reload TTS. Keeping the
-    # currently resident model alive makes Save Settings safe during playback.
-
-    # Persisted segment rows short-circuit the engine cache entirely. Any
-    # setting that changes synthesized audio therefore needs fresh segment
-    # records, or playback would silently continue serving audio made with the
-    # old settings. The engine-level cache keys still keep the distinct WAVs
-    # separate; this clears only the database pointers used by playback.
-    higgs_audio_keys = {
-        'tts_engine', 'higgs_model_source', 'higgs_model_path',
-        'higgs_model_repo', 'higgs_temperature', 'higgs_top_p', 'higgs_top_k',
-        'higgs_max_new_tokens', 'higgs_seed', 'higgs_default_emotion',
-        'higgs_default_style', 'higgs_default_expressive', 'higgs_prompt_mode',
-    }
-    omnivoice_audio_keys = {
-        'tts_num_step',
-        'normalize_text',
-        'voice_design_anchor',
-        'piper_voice', 'supertonic_voice', 'supertonic_steps',
-        'moss_seed', 'moss_temperature', 'moss_top_p', 'moss_top_k',
-    }
-    if any(
-        key in updates and updates[key] != previous.get(key)
-        for key in higgs_audio_keys | omnivoice_audio_keys
-    ):
-        with get_conn() as conn:
-            conn.execute('DELETE FROM tts_segments')
-
-    if 'narrator_instruct' in updates and updates['narrator_instruct'] != previous.get('narrator_instruct'):
-        with get_conn() as conn:
-            conn.execute(
-                'DELETE FROM tts_segments WHERE book_id IN (SELECT id FROM books WHERE narrator_instruct IS NULL)'
-            )
-
-    return jsonify({'ok': True, 'settings': result})
 
 
-@app.route('/api/settings/llm-test', methods=['POST'])
-def llm_test():
-    body = request.get_json(force=True) or {}
-    provider = str(body.get('provider') or 'local').strip().lower()
-    if provider == 'openai':
-        base_url = 'https://api.openai.com/v1'
-        api_key = security.resolve_secret(
-            body.get('api_key'), app_settings.get('openai_api_key', '')
-        )
-        selected = str(
-            body.get('model') or app_settings.get('openai_model', '')
-        ).strip()
-        if not api_key:
-            return jsonify({
-                'ok': False,
-                'error': 'OpenAI API key is required.',
-            }), 400
-    else:
-        provider = 'local'
-        base_url = str(
-            body.get('base_url') or app_settings.get('llm_base_url', '')
-        ).strip()
-        api_key = security.resolve_secret(
-            body.get('api_key'), app_settings.get('llm_api_key', '')
-        )
-        selected = str(
-            body.get('model') or app_settings.get('llm_model', '')
-        ).strip()
-    try:
-        models = llm_characters.list_models(base_url, api_key=api_key)
-    except Exception as exc:
-        return jsonify({'ok': False, 'error': str(exc)}), 400
-    return jsonify({
-        'ok': True,
-        'provider': provider,
-        'models': models,
-        'selected_available': bool(selected and selected in models),
-    })
 
 
-@app.route('/api/settings/spacy-status')
-def spacy_status_route():
-    status = app_settings.spacy_status()
-    # Only report load errors for an installed model; a missing optional
-    # English model is already explained by the status itself.
-    status['error'] = char_module.spacy_error() if status.get('model_installed') else ''
-    return jsonify(status)
 
 
-@app.route('/api/settings/engine-install', methods=['POST'])
-def engine_install():
-    """Install an optional engine runtime into the Auris virtual environment."""
-    import subprocess
-    body = request.get_json(silent=True) or {}
-    packages = {'piper': ['piper-tts==1.8.0']}
-    engine = str(body.get('engine') or '')
-    if engine not in packages:
-        return jsonify({'ok': False, 'message': 'Ismeretlen motor.'}), 400
-    result = subprocess.run(
-        [sys.executable, '-m', 'pip', 'install', *packages[engine]],
-        capture_output=True, text=True,
-    )
-    if result.returncode:
-        return jsonify({'ok': False, 'message': (result.stderr or result.stdout)[-600:]}), 500
-    return jsonify({'ok': True, 'message': 'Telepítve. Mentsd a beállítást, majd töltsd újra a beszédmotort.'})
 
 
-@app.route('/api/settings/spacy-install', methods=['POST'])
-def spacy_install():
-    body = request.get_json(silent=True) or {}
-    language = 'hu' if str(body.get('language') or '').startswith('hu') else 'en'
-    result = app_settings.install_spacy_model(language)
-    if result['ok']:
-        # Reset spaCy NLP so it reloads the new model
-        char_module.reset_nlp_cache()
-    return jsonify(result)
 
 
-@app.route('/api/settings/model-download', methods=['POST'])
-def start_download():
-    body = request.get_json(force=True) or {}
-    repo_id = body.get('repo_id', app_settings.get('model_repo', 'k2-fsa/OmniVoice'))
-    dest = body.get('dest', app_settings.get('model_path'))
-    hf_endpoint = body.get('hf_endpoint', app_settings.get('hf_endpoint', ''))
-    if not security.valid_hf_repo(repo_id):
-        return jsonify({'error': 'Érvénytelen Hugging Face repó-azonosító.'}), 400
-    app_settings.start_model_download(repo_id, dest, hf_endpoint)
-    return jsonify({'ok': True, 'dest': dest})
 
 
-@app.route('/api/settings/model-download/progress')
-def download_progress():
-    return jsonify(app_settings.download_state())
 
 
-@app.route('/api/settings/tts-reload', methods=['POST'])
-def tts_reload():
-    tts.reload()
-    return jsonify({'ok': True})
 
 
-@app.route('/api/settings/check-model-path', methods=['POST'])
-def check_model_path():
-    body = request.get_json(force=True) or {}
-    path = body.get('path', '')
-    exists = os.path.isdir(path)
-    has_config = os.path.exists(os.path.join(path, 'config.json'))
-    return jsonify({'exists': exists, 'has_config': has_config, 'path': path})
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -4128,7 +3278,19 @@ def check_model_path():
 from core.experience_api import bp as experience_blueprint
 from core.qa_api import bp as qa_blueprint
 from core.assist_api import bp as assist_blueprint
+from core.openai_api import bp as openai_blueprint
+from core.production_api import bp as production_blueprint
+from core.events_api import bp as events_blueprint
+from core.pwa_api import bp as pwa_blueprint
+from core.settings_api import bp as settings_blueprint
+from core.export_api import bp as export_blueprint
 app.register_blueprint(experience_blueprint)
+app.register_blueprint(settings_blueprint)
+app.register_blueprint(export_blueprint)
+app.register_blueprint(pwa_blueprint)
+app.register_blueprint(events_blueprint)
+app.register_blueprint(production_blueprint)
+app.register_blueprint(openai_blueprint)
 app.register_blueprint(qa_blueprint)
 app.register_blueprint(assist_blueprint)
 
@@ -4137,4 +3299,8 @@ if __name__ == '__main__':
         _startup()
     from core import backup_schedule
     backup_schedule.start()
-    app.run(host='127.0.0.1', port=7860, debug=False, threaded=True)
+    # AURIS_HOST=0.0.0.0 (for example in Docker) exposes the server; add the
+    # names clients use in AURIS_ALLOWED_HOSTS so the Host check accepts them.
+    host = os.environ.get('AURIS_HOST', '127.0.0.1')
+    port = int(os.environ.get('AURIS_PORT', '7860'))
+    app.run(host=host, port=port, debug=False, threaded=True)

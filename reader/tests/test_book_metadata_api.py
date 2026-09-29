@@ -143,7 +143,7 @@ class BookMetadataApiTest(unittest.TestCase):
         response = self.client.put('/api/books/1', json={'title': '   '})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('Title', response.get_json()['error'])
+        self.assertIn('cím', response.get_json()['error'])
         self.assertEqual(self._book()['title'], 'Unknown Title')
 
     def test_empty_author_becomes_unknown_author(self):

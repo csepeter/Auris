@@ -149,6 +149,13 @@ def cuda_to_wheel_tag(cuda_version):
 def detect_hardware():
     step("Detecting hardware")
 
+    # Container builds have no GPU attached; AURIS_TORCH_VARIANT=cu128 (or cpu)
+    # selects the PyTorch build explicitly.
+    forced = os.environ.get("AURIS_TORCH_VARIANT", "").strip().lower()
+    if forced:
+        ok(f"PyTorch variant forced by AURIS_TORCH_VARIANT: {forced}")
+        return forced
+
     if is_apple_silicon():
         ok("Apple Silicon (MPS) detected")
         return "mps"

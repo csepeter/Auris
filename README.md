@@ -47,6 +47,15 @@ labels and the updated workflows described below and in the built-in help.
 - Hungarian text processing: dates, Roman numerals, times, units, currencies,
   abbreviations and acronyms are spoken correctly; Hungarian sentence splitting,
   dialogue dashes and quotes; HuSpaCy-based character detection.
+- A Production page per book: pipeline status, per-chapter audio and quality
+  results, cast overview, whole-book generation and one-click exports.
+- Quality control with Whisper speech recognition, alternative takes, approval,
+  loudness checks and measured word timings for highlighting.
+- Publishing packages: EPUB3 read-along, Audiobookshelf folder/upload,
+  distribution MP3 with sample, DAW stems; Opus/FLAC; credits and background music.
+- Installable, phone-friendly interface with offline playback of cached audio,
+  live updates over one server-event stream, a chapter timeline and keyboard
+  shortcuts (J/L seek, [ ] speed).
 
 - Preview and import EPUB, PDF, DOCX, TXT, DRM-free PRC/MOBI, or a public HTTP(S) article; edit title,
   author, and language before confirming.
@@ -138,6 +147,15 @@ bash reader/run.sh
 Leave the terminal open while Auris is running, then open
 [http://127.0.0.1:7860](http://127.0.0.1:7860) in a browser. Stop the server
 with `Ctrl+C` in that terminal.
+
+## Command line, API and Docker
+
+- `reader/auris_cli.py`: batch import, quality check and export from the
+  command line (`python auris_cli.py --help`).
+- OpenAI-compatible `POST /v1/audio/speech` for other tools, using the active
+  engine and saved Hungarian voice profiles.
+- `docker compose up -d` builds and runs Auris with an NVIDIA GPU; data lives in
+  `docker-data/`. Use `TORCH_VARIANT: cpu` for machines without a GPU.
 
 ## Model setup
 

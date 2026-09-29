@@ -331,3 +331,56 @@ def pronunciation_listen():
         language=(book["language"] if book else None) or "hu",
     )
     return jsonify(spoken=spoken, audio_url=f"/api/audio/{result['cache_key']}")
+
+
+# ── Voice Studio helpers ────────────────────────────────────────────────────
+
+@bp.route("/api/characters/<int:char_id>/ref-audio", methods=["GET"])
+def character_reference_audio(char_id):
+    """Play back the uploaded reference recording of a character."""
+    import os
+
+    from flask import send_file
+
+    with get_conn() as conn:
+        row = conn.execute("SELECT ref_audio_path FROM characters WHERE id=?", (char_id,)).fetchone()
+    path = row["ref_audio_path"] if row else None
+    if not path or not os.path.isfile(path):
+        return jsonify(error="Nincs referenciahang."), 404
+    return send_file(path, mimetype="audio/wav")
+
+
+@bp.route("/api/books/<int:book_id>/narrator-ref-audio", methods=["GET"])
+def narrator_reference_audio(book_id):
+    import os
+
+    from flask import send_file
+
+    with get_conn() as conn:
+        row = conn.execute("SELECT narrator_ref_audio_path FROM books WHERE id=?", (book_id,)).fetchone()
+    path = row["narrator_ref_audio_path"] if row else None
+    if not path or not os.path.isfile(path):
+        return jsonify(error="Nincs referenciahang."), 404
+    return send_file(path, mimetype="audio/wav")
+
+
+@bp.route("/api/voice-profiles/<int:profile_id>/preview", methods=["POST"])
+def preview_voice_profile(profile_id):
+    """Speak a sample line with a saved profile (for A/B comparison)."""
+    import os
+
+    application = _app()
+    data = request.get_json(silent=True) or {}
+    with get_conn() as conn:
+        profile = conn.execute("SELECT * FROM voice_profiles WHERE id=?", (profile_id,)).fetchone()
+    if not profile:
+        return jsonify(error="A hangprofil nem található."), 404
+    if application.tts.status().get("state") != "ready":
+        return jsonify(error="A beszédmotor még nem áll készen."), 503
+    text = str(data.get("text") or "Az árvíztűrő tükörfúrógép próbája.").strip()[:1500]
+    ref = profile["ref_audio_path"] if profile["ref_audio_path"] and os.path.isfile(profile["ref_audio_path"]) else None
+    result = application.tts.generate_preview(
+        instruct=profile["instruct"], sample_text=text, ref_audio=ref,
+        ref_text=profile["ref_text"] if ref else None, language=str(data.get("language") or "hu"),
+    )
+    return jsonify(audio_url=f"/api/audio/{result['cache_key']}")
