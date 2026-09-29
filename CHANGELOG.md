@@ -22,7 +22,6 @@ represent a new product generation or an incompatible change.
 
 #### Változott
 
-- A teljes könyv generálása és a fejezet ellenőrzése akkor is elindítható, ha a beszédmotor még töltődik: a feladat megvárja a betöltést, és ezt ki is írja. Korábban 503-as hibát adott.
 - A súgó leírja, miért nem kvantálja az Auris a Higgs-modellt (FP8, int8, vLLM).
 
 ### English
@@ -33,7 +32,6 @@ represent a new product generation or an incompatible change.
 
 #### Changed
 
-- Whole-book generation and chapter checks can start while the speech engine is still loading; the job waits and says so instead of returning HTTP 503.
 - The documentation explains why Auris does not quantise the Higgs model (FP8, int8, vLLM).
 
 ## [4.1.0] - 2026-09-29
@@ -52,6 +50,7 @@ represent a new product generation or an incompatible change.
 - Az oldalak a feladatok és a beszédmotor állapotát a szerveresemény-csatornáról kapják; a gyakori ismételt lekérdezés csak tartalékként maradt meg.
 - Egységes betűk és színek: a kis feliratok táblázatos számokkal a felület betűjét használják, a kód olvashatóbb monospace betűt; az állapotszínek világos témában is kellő kontrasztúak.
 - A Produkció oldal fejezetlistája telefonon kártyás elrendezésű; az olvasó oldalsávjának gombjai nem vágódnak le.
+- A teljes könyv generálása és a fejezet ellenőrzése akkor is elindítható, ha a beszédmotor még töltődik: a feladat megvárja a betöltést, és ezt ki is írja. Korábban 503-as hibát adott.
 - A maradék angol hibaüzenetek (fejezetkijelölés, modellletöltés, export) magyarok.
 - A `requirements.txt` már nem sorolja fel a gradio, tensorboardX és webdataset csomagot; ezeket csak az omnivoice hozza magával.
 
@@ -69,6 +68,7 @@ represent a new product generation or an incompatible change.
 - Pages receive job and engine state from the server-event stream; frequent polling remains only as a fallback.
 - Consistent type and colour: small labels use the UI font with tabular figures, code uses a readable monospace font, and status colours keep their contrast in light themes.
 - The Production page chapter list uses cards on phones; the reader sidebar buttons no longer clip.
+- Whole-book generation and chapter checks can start while the speech engine is still loading; the job waits and says so instead of returning HTTP 503.
 - Remaining English error messages (chapter selection, model download, export) are Hungarian.
 - `requirements.txt` no longer lists gradio, tensorboardX and webdataset; they only arrive as omnivoice dependencies.
 
