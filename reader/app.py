@@ -56,7 +56,15 @@ def _inject_i18n():
             _i18n_cache['mtime'] = mtime
     except (OSError, ValueError):
         pass
-    return {'i18n': _i18n_cache['data']}
+    try:
+        theme = str(app_settings.load().get('theme') or 'night')
+    except Exception:
+        theme = 'night'
+    if theme not in ('night', 'sepia', 'paper', 'amoled'):
+        theme = 'night'
+    # The saved theme is the first-paint default on every page, so a new
+    # browser does not start light on some pages and dark on the reader.
+    return {'i18n': _i18n_cache['data'], 'ui_theme': theme}
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)

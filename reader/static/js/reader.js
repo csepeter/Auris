@@ -13,7 +13,7 @@ let speedMultiplier = 1.0;
 let fontSize        = parseInt(localStorage.getItem('fontSize') || '18');
 let fontFamily      = localStorage.getItem('fontFamily') || 'serif';
 let lineHeight      = parseFloat(localStorage.getItem('lineHeight') || '1.9');
-let currentTheme    = localStorage.getItem('theme') || 'night';
+let currentTheme    = localStorage.getItem('theme') || window.AURIS_THEME || 'night';
 let showSpeakerLabels = localStorage.getItem('showSpeakerLabels') === 'true';
 let _progressSaveTimer = null;
 let _scrollProgressTimer = null;

@@ -12,6 +12,20 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.3.3] - 2026-09-29
+
+### Magyar
+
+#### Javítva
+
+- Új böngészőben minden oldal a mentett témával indul. Eddig világos operációsrendszer-beállításnál a Könyvtár, a Produkció, az Ellenőrzés és a Feladatok világosan nyílt, az olvasó és a Beállítások viszont a mentett sötét témával, és a téma az olvasó megnyitása után váltott át.
+
+### English
+
+#### Fixed
+
+- In a new browser every page starts in the saved theme. With a light OS colour scheme the Library, Production, Quality and Jobs pages used to open light while the reader and Settings used the saved dark theme, and the theme flipped after the reader was opened.
+
 ## [4.3.2] - 2026-09-29
 
 ### Magyar

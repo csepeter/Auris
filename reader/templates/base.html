@@ -12,7 +12,9 @@
 (function () {
   var t = null;
   try { t = localStorage.getItem('theme'); } catch (e) {}
-  if (!t && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) t = 'paper';
+  // Same default as the reader and Settings: the saved server-side theme.
+  window.AURIS_THEME = '{{ ui_theme|default("night") }}';
+  if (!t) t = window.AURIS_THEME;
   if (t && t !== 'night') document.documentElement.classList.add('theme-' + t);
 })();
 </script>
