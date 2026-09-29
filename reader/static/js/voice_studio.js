@@ -201,7 +201,7 @@ function sortCharacters(characters, mode = "lines") {
   const list = [...(characters || [])];
   const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "hu", { sensitivity: "base" });
   if (mode === "name") return list.sort(byName);
-  return list.sort((a, b) => ((Number(b.frequency) || 0) - (Number(a.frequency) || 0)) || byName(a, b));
+  return list.sort((a, b) => ((Number(b.line_count ?? b.frequency) || 0) - (Number(a.line_count ?? a.frequency) || 0)) || byName(a, b));
 }
 
 /** Toggle an id in a selection while keeping at most `max` items. */
@@ -1445,7 +1445,7 @@ function characterCardHtml(character) {
   const id = character.id;
   const voice = parseInstruct(character.instruct);
   const initial = String(character.name || "?").charAt(0).toUpperCase();
-  const lines = Number(character.frequency) || 0;
+  const lines = Number(character.line_count ?? character.frequency) || 0;
   const expanded = expandedCards.has(Number(id));
   const source = voiceSourceOf(character, voiceProfiles);
   return `<article class="character-card voice-character${expanded ? " is-open" : ""}" id="card-${id}" data-char="${id}" aria-labelledby="char-name-${id}">

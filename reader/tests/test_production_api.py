@@ -108,6 +108,19 @@ class ProductionApiTest(unittest.TestCase):
         self.assertEqual(job["result"]["ready"], job["result"]["total"])
         self.assertGreater(job["result"]["total"], 0)
 
+    def test_rule_based_speakers_are_counted_without_annotations(self):
+        with database.get_conn() as conn:
+            conn.execute("UPDATE books SET single_narrator_mode=0 WHERE id=1")
+            conn.execute("UPDATE chapters SET content=? WHERE id=1",
+                         ((chr(10) * 2).join(["– Gyere ide! – mondta Anna. – Siess!", "Péter hallgatott."]),))
+            conn.execute("INSERT INTO characters (book_id,name,gender,frequency,instruct) "
+                         "VALUES (1,'Kovács Anna','female',0,'female, young adult, moderate pitch')")
+        cast = {c["name"]: c for c in self.client.get("/api/books/1/production").get_json()["characters"]}
+        self.assertTrue(cast["Kovács Anna"]["speaks"])
+        self.assertGreaterEqual(cast["Kovács Anna"]["lines"], 1)
+        listed = self.client.get("/api/books/1/characters").get_json()
+        self.assertGreaterEqual(listed[0]["line_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

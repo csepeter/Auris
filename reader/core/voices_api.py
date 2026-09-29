@@ -36,7 +36,19 @@ def list_characters(book_id):
             'SELECT * FROM characters WHERE book_id=? ORDER BY frequency DESC',
             (book_id,)
         ).fetchall()
+        # Rule-based attribution (no language model) lives in the segments,
+        # not in speaker_annotations; count whichever is larger.
+        segment_lines = {
+            row[0]: row[1] for row in conn.execute(
+                'SELECT character_name, COUNT(*) FROM tts_segments '
+                'WHERE book_id=? AND character_name IS NOT NULL GROUP BY character_name',
+                (book_id,))
+        }
     characters = [dict(r) for r in rows]
+    for character in characters:
+        character['line_count'] = max(int(character.get('frequency') or 0),
+                                      int(segment_lines.get(character['name'], 0)))
+    characters.sort(key=lambda c: -c['line_count'])
     if chapter_character_names is not None:
         characters = [
             character

@@ -12,6 +12,20 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.3.5] - 2026-09-29
+
+### Magyar
+
+#### Javítva
+
+- A Produkció oldal szereposztása és a Hangstúdió szereplőlistája nyelvi modell nélkül minden szereplőnél „0 megszólalást” mutatott, mert csak a nyelvi modelles jelöléseket számolta. Most a szabályok alapján hozzárendelt mondatokat is számolja, és a Hangstúdió e szerint rendez.
+
+### English
+
+#### Fixed
+
+- The Production cast and the Voice Studio character list showed "0 lines" for every character without a language model, because they counted model annotations only. Rule-based attributions are counted too, and Voice Studio sorts by that count.
+
 ## [4.3.4] - 2026-09-29
 
 ### Magyar

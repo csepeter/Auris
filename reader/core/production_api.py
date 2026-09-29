@@ -65,8 +65,12 @@ def production_summary(book_id):
     totals = {"segments": 0, "ready": 0, "duration_sec": 0.0, "words": 0,
               "qa_checked": 0, "qa_fail": 0, "qa_warn": 0}
     chapter_rows = []
+    segment_lines: dict[str, int] = {}
     for number, chapter in enumerate(chapters, 1):
         segs = application._get_chapter_segments(chapter["id"], book_id)
+        for seg in segs:
+            if seg.get("character_name"):
+                segment_lines[seg["character_name"]] = segment_lines.get(seg["character_name"], 0) + 1
         ready = [s for s in segs if s.get("audio_path") and os.path.exists(s["audio_path"])]
         duration = sum(float(s.get("duration_sec") or 0) for s in ready)
         qa = qa_by_chapter.get(chapter["id"], {"ok": 0, "warn": 0, "fail": 0, "approved": 0})
@@ -87,7 +91,8 @@ def production_summary(book_id):
     single = bool(book["single_narrator_mode"])
     speaking = {name for row in chapter_rows for name in row["speakers"]}
     cast = [{
-        "id": c["id"], "name": c["name"], "gender": c["gender"], "lines": c["frequency"] or 0,
+        "id": c["id"], "name": c["name"], "gender": c["gender"],
+        "lines": max(int(c["frequency"] or 0), segment_lines.get(c["name"], 0)),
         "voice_source": _voice_source(c), "instruct": c["instruct"],
         "speaks": c["name"] in speaking,
     } for c in characters]
