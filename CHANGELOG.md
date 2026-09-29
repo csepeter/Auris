@@ -18,13 +18,13 @@ represent a new product generation or an incompatible change.
 
 #### Javítva
 
-- **Nyelvi modell nélküli beszélő-hozzárendelés**: a „suttogta Anna”, „sóhajtott Imre” típusú párbeszédsorok eddig gazdátlanok maradtak, ha a szereplő teljes néven (Kovács Anna, Nagy Imre) szerepelt. Most a rövid név és a megszólítás („Imre bácsi”) az egyértelmű teljes névhez kapcsolódik, és egy bekezdésen belül a név nélküli folytatás is a már azonosított beszélőé. A próbakönyvben a beszélőhöz rendelt sorok száma kettőről nyolcra nőtt.
+- **Nyelvi modell nélküli beszélő-hozzárendelés**: a „suttogta Anna”, „sóhajtott Imre” típusú párbeszédsorok eddig gazdátlanok maradtak, ha a szereplő teljes néven (Kovács Anna, Nagy Imre) szerepelt. Most a rövid név és a megszólítás („Imre bácsi”) az egyértelmű teljes névhez kapcsolódik, és egy bekezdésen belül a név nélküli folytatás is a már azonosított beszélőé. A próbakönyvben a beszélőhöz rendelt sorok száma kettőről kilencre nőtt.
 
 ### English
 
 #### Fixed
 
-- **Speaker attribution without a language model**: lines like "suttogta Anna" or "sóhajtott Imre" stayed unassigned when the character was detected by full name (Kovács Anna, Nagy Imre). A short name or an honorific ("Imre bácsi") now resolves to the unambiguous full name, and an unattributed sentence continues the speaker already found in the same paragraph. In the demo book, attributed lines went from two to eight.
+- **Speaker attribution without a language model**: lines like "suttogta Anna" or "sóhajtott Imre" stayed unassigned when the character was detected by full name (Kovács Anna, Nagy Imre). A short name or an honorific ("Imre bácsi") now resolves to the unambiguous full name, and an unattributed sentence continues the speaker already found in the same paragraph. In the demo book, attributed lines went from two to nine.
 
 ## [4.3.3] - 2026-09-29
 
