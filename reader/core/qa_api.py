@@ -62,6 +62,9 @@ def ensure_tables() -> None:
             );
             """
         )
+    from core import alignment
+
+    alignment.ensure_table()
     with _tables_lock:
         _tables_ready.add(path)
 
@@ -108,7 +111,10 @@ def _asr_prompt(chars: dict) -> str:
     return ", ".join(names)
 
 
-def _evaluate(path: str, text: str, language, *, transcriber, prompt: str) -> dict:
+def _evaluate(path: str, text: str, language, *, transcriber, prompt: str,
+              cache_key: str | None = None, align: bool = True) -> dict:
+    from core import alignment
+
     metrics = qa.analyze_audio(path, text)
     result = {"metrics": metrics, "flags": list(metrics["flags"]), "cer": None,
               "wer": None, "heard": None}
@@ -117,6 +123,14 @@ def _evaluate(path: str, text: str, language, *, transcriber, prompt: str) -> di
         score = qa.score_transcript(text, heard["text"], language)
         result.update(cer=score["cer"], wer=score["wer"], heard=heard["text"],
                       missing=score["missing_words"])
+        if align and cache_key:
+            # A second pass with word timestamps drives read-along highlighting.
+            try:
+                timed = transcriber.transcribe(path, language, word_timestamps=True)
+                timings = alignment.align_words(text, timed["words"], metrics["duration_sec"], language)
+                alignment.store(cache_key, timings, "asr")
+            except Exception as exc:
+                log.warning("Word alignment failed for %s: %s", cache_key, exc)
     return result
 
 
@@ -191,7 +205,8 @@ def run_qa_job(job_id: str, book_id: int, chapter_id: int, use_asr: bool, auto_r
             if not path or not os.path.exists(path):
                 evaluations.append(None)
                 continue
-            evaluation = _evaluate(path, seg["text"], language, transcriber=transcriber, prompt=prompt)
+            evaluation = _evaluate(path, seg["text"], language, transcriber=transcriber,
+                                   prompt=prompt, cache_key=seg.get("cache_key"))
             evaluations.append(evaluation)
             job["done"] = index + 1
             job["message"] = f"Ellenőrzés ({index + 1}/{len(segs)})"
@@ -221,7 +236,8 @@ def run_qa_job(job_id: str, book_id: int, chapter_id: int, use_asr: bool, auto_r
                     result = application.tts.generate(**item, take=take)
                     _record_take(book_id, chapter_id, seg, take, result)
                     candidate = _evaluate(result["audio_path"], seg["text"], language,
-                                          transcriber=transcriber, prompt=prompt)
+                                          transcriber=transcriber, prompt=prompt,
+                                          cache_key=result["cache_key"])
                     candidate_status = qa.classify(candidate["cer"], candidate["flags"],
                                                    warn=options["cer_warn"], fail=options["cer_fail"])
                     _store(book_id, chapter_id, seg, result["cache_key"], candidate,
@@ -435,3 +451,16 @@ def chapter_loudness(book_id, chapter_id):
         if applied:
             mastered = qa.loudness_report(mastered_path)
     return jsonify(raw=raw, mastered=mastered)
+
+
+@bp.route("/api/books/<int:book_id>/chapters/<int:chapter_id>/word-timings")
+def word_timings(book_id, chapter_id):
+    """Measured word timings of the chapter's current audio, by cache key."""
+    from core import alignment
+
+    ensure_tables()
+    with get_conn() as conn:
+        keys = [r[0] for r in conn.execute(
+            "SELECT cache_key FROM tts_segments WHERE book_id=? AND chapter_id=? "
+            "AND audio_path IS NOT NULL", (book_id, chapter_id))]
+    return jsonify(timings=alignment.load_many(keys))

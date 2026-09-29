@@ -181,6 +181,18 @@ async function loadSettings() {
   setNumber('qa-cer-fail', Math.round((_settings.qa_cer_fail ?? 0.15) * 100));
   setNumber('qa-max-takes', _settings.qa_max_takes ?? 3);
   setNumber('asr-model', _settings.asr_model || '');
+  setNumber('narrator-credit', _settings.narrator_credit || '');
+  setNumber('export-intro-template', _settings.export_intro_template || '');
+  setNumber('export-outro-template', _settings.export_outro_template || '');
+  setNumber('abs-url', _settings.abs_url || '');
+  setNumber('abs-api-token', _settings.abs_api_token || '');
+  if (_settings.abs_library_id) {
+    const select = document.getElementById('abs-library');
+    if (select && ![...select.options].some(o => o.value === _settings.abs_library_id)) {
+      select.add(new Option(`Mentett könyvtár (${_settings.abs_library_id})`, _settings.abs_library_id));
+    }
+    if (select) select.value = _settings.abs_library_id;
+  }
 
   refreshAccelStatus();
 
@@ -683,6 +695,13 @@ async function saveSettingsValues() {
     qa_cer_fail: (parseFloat(document.getElementById('qa-cer-fail')?.value || '15') || 15) / 100,
     qa_max_takes: parseInt(document.getElementById('qa-max-takes')?.value || '3', 10),
     asr_model: (document.getElementById('asr-model')?.value || '').trim(),
+    narrator_credit: (document.getElementById('narrator-credit')?.value || '').trim(),
+    export_intro_template: document.getElementById('export-intro-template')?.value || '',
+    export_outro_template: document.getElementById('export-outro-template')?.value || '',
+    abs_url: (document.getElementById('abs-url')?.value || '').trim(),
+    abs_api_token: document.getElementById('abs-api-token')?.value || '',
+    abs_library_id: document.getElementById('abs-library')?.value || '',
+    abs_folder_id: document.getElementById('abs-library')?.selectedOptions?.[0]?.dataset.folder || '',
     piper_voice:      document.getElementById('piper-voice')?.value || 'anna',
     supertonic_voice: document.getElementById('supertonic-voice')?.value || 'F1',
     supertonic_steps: parseInt(document.getElementById('supertonic-steps')?.value || '10', 10),
@@ -751,3 +770,35 @@ showSettingsCategory(
 loadSettings().catch(error => {
   document.getElementById('save-hint').textContent = 'A beállítások nem tölthetők be. Frissítsd az oldalt. ' + error.message;
 });
+
+
+async function loadAbsLibraries() {
+  const hint = document.getElementById('abs-hint');
+  const select = document.getElementById('abs-library');
+  hint.textContent = 'Kapcsolódás…';
+  hint.className = 'status-hint status-warn';
+  try {
+    const response = await fetch('/api/settings/abs-libraries', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        url: document.getElementById('abs-url').value.trim(),
+        token: document.getElementById('abs-api-token').value,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'A kapcsolódás nem sikerült.');
+    const current = select.value;
+    select.replaceChildren(new Option('– válassz könyvtárat –', ''));
+    (data.libraries || []).forEach(library => {
+      const option = new Option(library.name, library.id);
+      option.dataset.folder = library.folders?.[0]?.id || '';
+      select.add(option);
+    });
+    if (current) select.value = current;
+    hint.textContent = `${(data.libraries || []).length} könyvtár elérhető.`;
+    hint.className = 'status-hint status-ok';
+  } catch (error) {
+    hint.textContent = error.message;
+    hint.className = 'status-hint status-error';
+  }
+}

@@ -65,3 +65,14 @@ test('resume advances to a pending segment before replaying an ended segment', (
     offsetSec: 4.25,
   });
 });
+
+test('syllable weights keep long compounds and sentence ends longer', () => {
+  const { wordWeights, wordIndexFromWeights, wordIndexFromTimings } = require('../static/js/listening.js');
+  const weights = wordWeights(['A', 'tükörfúrógép', 'működik.']);
+  assert.ok(weights[1] > weights[0] * 3);
+  assert.ok(weights[2] > 3);
+  assert.equal(wordIndexFromWeights(0.1, 10, weights), 0);
+  assert.equal(wordIndexFromWeights(9.9, 10, weights), 2);
+  assert.equal(wordIndexFromTimings(1.2, [[0, 0.5], [0.5, 1.1], [1.1, 2]]), 2);
+  assert.equal(wordIndexFromTimings(0.2, [[0, 0.5], [0.5, 1.1]]), 0);
+});

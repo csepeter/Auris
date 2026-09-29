@@ -422,6 +422,75 @@ def _wav_to_mp3_file(wav_path: str, mp3_path: str, tags: dict[str, str] | None =
     return True
 
 
+AUDIO_FORMATS = ('wav', 'mp3', 'opus', 'flac')
+_ENCODERS = {
+    'mp3': ['-codec:a', 'libmp3lame', '-b:a', '192k', '-id3v2_version', '3'],
+    # Speech at 64 kbit/s Opus is transparent and a quarter of MP3's size.
+    'opus': ['-codec:a', 'libopus', '-b:a', '64k', '-application', 'voip'],
+    'flac': ['-codec:a', 'flac', '-compression_level', '8'],
+}
+
+
+def encode_audio(wav_path: str, audio_fmt: str, tags: dict[str, str] | None = None,
+                 *, acx: bool = False) -> tuple[str, str]:
+    """Encode a mastered WAV; returns (path, actual format). WAV stays as is.
+
+    ``acx`` produces the ACX delivery format: 192 kbit/s CBR MP3, 44.1 kHz,
+    mono.
+    """
+    if audio_fmt == 'wav' or audio_fmt not in _ENCODERS:
+        return wav_path, 'wav'
+    target = wav_path[:-4] + '.' + audio_fmt
+    if audio_fmt == 'mp3' and not acx:
+        if _wav_to_mp3_file(wav_path, target, tags):
+            return target, 'mp3'
+        mp3 = _wav_to_mp3_bytes(wav_path, tags=tags)
+        if mp3:
+            with open(target, 'wb') as handle:
+                handle.write(mp3)
+            return target, 'mp3'
+        return wav_path, 'wav'
+    if not _ffmpeg_available():
+        return wav_path, 'wav'
+    command = ['ffmpeg', '-hide_banner', '-nostats', '-y', '-i', wav_path, *_ENCODERS[audio_fmt]]
+    if acx:
+        command += ['-ar', '44100', '-ac', '1', '-write_xing', '0']
+    for key, value in (tags or {}).items():
+        if str(value).strip():
+            command += ['-metadata', f'{key}={value}']
+    command.append(target)
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0 or not os.path.isfile(target):
+        log.warning('FFmpeg %s encoding failed: %s', audio_fmt, (result.stderr or '')[-400:])
+        return wav_path, 'wav'
+    return target, audio_fmt
+
+
+def mix_background(voice_path: str, music_path: str, output_path: str,
+                   *, music_db: float = -22.0) -> bool:
+    """Loop a music bed under the voice and duck it while someone speaks."""
+    if not (_ffmpeg_available() and music_path and os.path.isfile(music_path)):
+        return False
+    graph = (
+        f'[1:a]aformat=channel_layouts=mono,aresample={SAMPLE_RATE},'
+        f'volume={float(music_db)}dB[bed];'
+        '[bed][0:a]sidechaincompress=threshold=0.02:ratio=8:attack=25:release=450[ducked];'
+        '[0:a][ducked]amix=inputs=2:duration=first:normalize=0,'
+        'alimiter=limit=0.89[out]'
+    )
+    command = [
+        'ffmpeg', '-hide_banner', '-nostats', '-y', '-i', voice_path,
+        '-stream_loop', '-1', '-i', music_path,
+        '-filter_complex', graph, '-map', '[out]',
+        '-ar', str(SAMPLE_RATE), '-ac', '1', '-c:a', 'pcm_s16le', '-rf64', 'auto', output_path,
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0 or not os.path.isfile(output_path):
+        log.warning('Background music mix failed: %s', (result.stderr or '')[-400:])
+        return False
+    return True
+
+
 def _merge_wavs(segments: list[dict]) -> np.ndarray:
     arrays = []
     playable = [
@@ -475,8 +544,13 @@ def export_single_chapter(
     mastering: bool = False,
     book_author: str = 'Unknown',
     track_number: int | None = None,
+    acx: bool = False,
+    background: dict | None = None,
 ) -> dict:
-    """Returns {'audio_path': ..., 'subtitle_path': ..., 'audio_fmt': ..., 'sub_fmt': ...}"""
+    """Returns {'audio_path': ..., 'subtitle_path': ..., 'audio_fmt': ..., 'sub_fmt': ...}
+
+    ``background``: optional {'path': music file, 'db': level} music bed.
+    """
     output_dir = output_dir or _book_export_dir(book_author, book_title)
     os.makedirs(output_dir, exist_ok=True)
     safe_title = _safe_name(file_stem or chapter_title)
@@ -504,28 +578,20 @@ def export_single_chapter(
     else:
         _write_merged_wav(timeline, wav_path)
 
-    out_audio = wav_path
-    actual_fmt = 'wav'
-    if audio_fmt == 'mp3':
-        tags = {
-            'title': chapter_title,
-            'artist': book_author,
-            'album': book_title,
-            'track': str(track_number) if track_number is not None else '',
-        }
-        mp3_path = wav_path[:-4] + '.mp3'
-        if _wav_to_mp3_file(wav_path, mp3_path, tags):
-            out_audio = mp3_path
-            actual_fmt = 'mp3'
-            os.remove(wav_path)
-        else:
-            mp3 = _wav_to_mp3_bytes(wav_path, tags=tags)
-            if mp3:
-                out_audio = mp3_path
-                with open(out_audio, 'wb') as f:
-                    f.write(mp3)
-                actual_fmt = 'mp3'
-                os.remove(wav_path)
+    if background and background.get('path'):
+        mixed = os.path.join(output_dir, f'.{safe_title}.music.wav')
+        if mix_background(wav_path, background['path'], mixed, music_db=background.get('db', -22.0)):
+            os.replace(mixed, wav_path)
+
+    tags = {
+        'title': chapter_title,
+        'artist': book_author,
+        'album': book_title,
+        'track': str(track_number) if track_number is not None else '',
+    }
+    out_audio, actual_fmt = encode_audio(wav_path, audio_fmt, tags, acx=acx)
+    if out_audio != wav_path and os.path.exists(wav_path):
+        os.remove(wav_path)
 
     sub_path = None
     sub_ext = 'none'
@@ -547,6 +613,12 @@ def export_single_chapter(
         'sub_fmt': sub_ext,
         'mastering_applied': mastering_applied,
         'mastering_warning': mastering_warning,
+        'timeline': [
+            {key: seg.get(key) for key in (
+                'text', 't_start', 't_end', 'block_kind', 'ends_paragraph',
+                'character_name', 'audio_path', 'segment_index')}
+            for seg in timeline if seg.get('t_end') is not None
+        ],
     }
 
 
@@ -599,9 +671,12 @@ def export_chapter_folder(
     sub_fmt: str = 'ass',
     mastering: bool = False,
     book_author: str = 'Unknown',
+    acx: bool = False,
+    background: dict | None = None,
+    output_dir: str | None = None,
 ) -> dict:
     """Write numbered chapter files beneath ``exports/<author> - <book title>``."""
-    output_dir = _book_export_dir(book_author, book_title)
+    output_dir = output_dir or _book_export_dir(book_author, book_title)
     os.makedirs(output_dir, exist_ok=True)
     max_number = max(
         (int(ch.get('chapter_number', 0)) for ch in chapters_data),
@@ -626,6 +701,8 @@ def export_chapter_folder(
             mastering=mastering,
             book_author=book_author,
             track_number=number,
+            acx=acx,
+            background=background,
         )
 
     # Mastering and encoding run in FFmpeg processes; chapters are independent.
@@ -656,11 +733,12 @@ def _ffmetadata_value(value: str) -> str:
 
 def export_m4b(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
                book_author='Unknown', mastering=False, book_metadata=None,
-               on_progress=None, check_cancelled=None):
+               on_progress=None, check_cancelled=None, background=None):
     from core.m4b_export import export
     return export(book_title, chapters_data, character_colors, sub_fmt=sub_fmt,
                   book_author=book_author, mastering=mastering, book_metadata=book_metadata,
-                  on_progress=on_progress, check_cancelled=check_cancelled)
+                  on_progress=on_progress, check_cancelled=check_cancelled,
+                  background=background)
 
 
 def parse_chapter_selection(selection: str | None, chapter_count: int) -> list[int]:

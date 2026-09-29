@@ -323,3 +323,8 @@ summary:focus-visible {
 .cap-chip.cap-no { opacity: .75; text-decoration: line-through; text-decoration-thickness: 1px; }
 .setting-grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .setting-grid-3 label { display: flex; flex-direction: column; gap: 6px; }
+
+.dictionary-candidates { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.candidate-chip { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: .82rem; }
+.candidate-chip small { color: var(--text2); }
+.candidate-chip.is-foreign { border-color: var(--accent); }

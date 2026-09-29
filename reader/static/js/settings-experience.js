@@ -264,3 +264,41 @@ async function runScheduledBackup() {
 }
 loadBackupSchedule();
 setInterval(loadBackupSchedule, 5000);
+
+async function loadPronunciationCandidates() {
+  const id = sx("dictionary-book").value;
+  const box = sx("dictionary-candidates");
+  if (!id) {
+    box.innerHTML = "<p>Előbb válassz könyvet az Érvényesség mezőben.</p>";
+    return;
+  }
+  box.innerHTML = "<p>Gyűjtés…</p>";
+  try {
+    const response = await fetch(`/api/books/${id}/pronunciation-candidates`);
+    const data = await response.json();
+    const items = data.candidates || [];
+    box.innerHTML = items.length
+      ? items.map((item) => `<button type="button" class="candidate-chip${item.foreign ? " is-foreign" : ""}" data-word="${sxEscape(item.word)}" title="${item.count}× · ${sxEscape(item.kind)}">${sxEscape(item.word)} <small>${item.count}</small></button>`).join("")
+      : "<p>Nem található javasolt szó.</p>";
+  } catch (error) {
+    box.innerHTML = `<p>${sxEscape(error.message)}</p>`;
+  }
+}
+sx("dictionary-candidates")?.addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-word]");
+  if (!chip) return;
+  sx("dictionary-source").value = chip.dataset.word;
+  sx("dictionary-replacement").focus();
+  showIpa(chip.dataset.word);
+});
+async function showIpa(text) {
+  const target = sx("dictionary-ipa");
+  if (!target || !text) return;
+  try {
+    const data = await fetch(`/api/pronunciation/ipa?text=${encodeURIComponent(text)}`).then((r) => r.json());
+    target.textContent = data.ipa ? `Jelenlegi kiejtés (IPA): /${data.ipa}/` : "";
+  } catch (_) {
+    target.textContent = "";
+  }
+}
+sx("dictionary-source")?.addEventListener("change", (event) => showIpa(event.target.value));

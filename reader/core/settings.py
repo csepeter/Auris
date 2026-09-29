@@ -125,6 +125,14 @@ DEFAULTS: dict = {
     # Export: trim model silence at sentence edges; optional ACX room tone
     'trim_segment_silence': True,
     'export_room_tone': False,
+    # Publishing: credits and Audiobookshelf server
+    'narrator_credit': '',
+    'export_intro_template': '{title}. Írta: {author}. Felolvassa: {narrator}.',
+    'export_outro_template': 'Vége. {title}. Írta: {author}.',
+    'abs_url': '',
+    'abs_api_token': '',
+    'abs_library_id': '',
+    'abs_folder_id': '',
     # Quality control (core/qa.py): character error rate thresholds
     'qa_cer_warn': 0.08,
     'qa_cer_fail': 0.15,

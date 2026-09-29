@@ -127,7 +127,7 @@ class QaApiTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def _wait(self, job_id):
-        for _ in range(200):
+        for _ in range(600):
             job = jobs.get_job(job_id)
             if job["state"] not in ("pending", "running"):
                 return job

@@ -245,12 +245,15 @@ def _chat(
     timeout: float,
     max_tokens: int,
     provider: str = "local",
+    system: str | None = None,
+    schema: dict | None = None,
+    schema_name: str = "speaker_attribution",
 ) -> dict:
     hosted_openai = str(provider or "").strip().lower() == "openai"
     base_payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system or _SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
     }
@@ -266,9 +269,9 @@ def _chat(
     schema_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "speaker_attribution",
+            "name": schema_name,
             "strict": True,
-            "schema": _response_schema(),
+            "schema": schema or _response_schema(),
         },
     }
     attempts = [

@@ -183,6 +183,15 @@ def init_db():
             conn.execute("ALTER TABLE books ADD COLUMN character_analysis_model TEXT")
         if "character_analysis_updated_at" not in cols:
             conn.execute("ALTER TABLE books ADD COLUMN character_analysis_updated_at TEXT")
+        # Publishing: optional music bed and narrator credit for intro/outro.
+        if "bg_music_path" not in cols:
+            conn.execute("ALTER TABLE books ADD COLUMN bg_music_path TEXT")
+        if "bg_music_name" not in cols:
+            conn.execute("ALTER TABLE books ADD COLUMN bg_music_name TEXT")
+        if "bg_music_db" not in cols:
+            conn.execute("ALTER TABLE books ADD COLUMN bg_music_db REAL DEFAULT -22")
+        if "narrator_credit" not in cols:
+            conn.execute("ALTER TABLE books ADD COLUMN narrator_credit TEXT")
 
         char_cols = {
             row["name"]

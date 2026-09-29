@@ -245,3 +245,14 @@
 }
 .engine-no-clone .clone-section { display: none; }
 .preset-voice-wrap, .preset-voice-label { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; font-size: .85rem; color: var(--text2); }
+
+/* Language-model assistant panel */
+.assist-panel { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin: 12px 0 18px; }
+.assist-panel summary { cursor: pointer; font-weight: 600; }
+.assist-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.assist-status { min-height: 1.2em; font-size: .88rem; color: var(--text2); }
+.assist-status.is-error { color: #e57373; }
+.assist-status.is-ok { color: #6ec890; }
+.assist-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; border-top: 1px solid var(--border); padding: 8px 0; }
+.assist-row p { margin: 4px 0 0; font-size: .82rem; }
+.assist-suggestions > .btn { margin-top: 8px; }

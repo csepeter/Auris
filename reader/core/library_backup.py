@@ -24,7 +24,7 @@ TABLES = (
     "voice_profiles",
 )
 PATH_FIELDS = {
-    "books": ("file_path", "narrator_ref_audio_path"),
+    "books": ("file_path", "narrator_ref_audio_path", "bg_music_path"),
     "characters": ("ref_audio_path",),
     "tts_segments": ("audio_path",),
     "voice_profiles": ("ref_audio_path",),

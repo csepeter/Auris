@@ -12,6 +12,50 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- **Kiadási csomagok** az export panelen:
+  - EPUB3 felolvasós könyv Media Overlays szövegkiemeléssel (az EPUBCheck szerint hibátlan);
+  - Audiobookshelf-mappa `metadata.json`-nal, leírással és felolvasóval, igény szerint közvetlen feltöltéssel;
+  - kiadói csomag: 192 kbit/s, 44,1 kHz mono MP3 és ötperces minta;
+  - hangszerkesztő-csomag: szereplőnkénti WAV-sávok, Audacity-címkék és `.lof`.
+- Opus és FLAC exportformátum.
+- A narrátor hangján felolvasott **nyitó és záró szöveg** szerkeszthető sablonnal és könyvenként megadható felolvasónévvel.
+- Könyvenkénti **háttérzene**, amely beszéd közben automatikusan lehalkul.
+- **Pontos szókiemelés**: a minőségellenőrzés beszédfelismeréssel méri a szavak idejét, az olvasó ezt használja; mérés nélkül szótagszám és írásjelszünet alapján becsül.
+- **Kiejtés javítása az olvasóban**: szó kijelölése → IPA-átírás, meghallgatás a narrátor hangján, mentés a könyvhöz vagy minden könyvhöz; ellenőrzésre javasolt nevek és idegen szavak listája a kiejtési szótárban.
+- **Nyelvi modelles segéd** a Hangstúdióban: hangjavaslat a szereplők mondatai és leírása alapján, valamint második körös beszélő-ellenőrzés, amely a kézi beállításokat nem írja felül.
+- Audiobookshelf-szerver beállításai (cím, API-kulcs, könyvtár) a Beállítások oldalon.
+
+#### Változott
+
+- Minden exportcél külön almappába kerül, így a különböző formátumok nem keverednek a letöltött csomagban.
+
+### English
+
+#### Added
+
+- **Publishing packages** in the export panel:
+  - EPUB3 read-along book with Media Overlays highlighting (EPUBCheck: no errors);
+  - Audiobookshelf folder with `metadata.json`, description and narrator, with optional direct upload;
+  - distribution package: 192 kbit/s, 44.1 kHz mono MP3 plus a five-minute sample;
+  - DAW package: per-speaker WAV tracks, Audacity labels and a `.lof` list.
+- Opus and FLAC export formats.
+- **Opening and closing credits** read in the narrator's voice, with an editable template and a per-book narrator name.
+- Per-book **background music** that ducks automatically under speech.
+- **Accurate word highlighting**: quality control measures word timings with speech recognition and the reader uses them; without measurements it estimates from syllables and punctuation pauses.
+- **Pronunciation fixes in the reader**: select a word to see its IPA, hear the sentence in the narrator's voice, and save a book or global rule; the dictionary suggests names and foreign words to check.
+- **Language-model assistant** in Voice Studio: voice suggestions from each character's lines and descriptions, and a second-pass speaker review that never overrides manual choices.
+- Audiobookshelf server settings (URL, API key, library) in Settings.
+
+#### Changed
+
+- Every export target is written to its own subfolder, so different formats are not mixed in a downloaded package.
+
 ## [3.7.0] - 2026-09-29
 
 ### Magyar

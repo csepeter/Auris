@@ -24,6 +24,59 @@
     return Math.min(Math.floor((elapsed / duration) * count), count - 1);
   }
 
+  const VOWELS = new Set('aáeéiíoóöőuúüűyAÁEÉIÍOÓÖŐUÚÜŰY');
+  const PAUSE_AFTER = { ',': 0.8, ';': 1, ':': 1, '.': 1.6, '!': 1.6, '?': 1.6, '…': 2, '–': 0.6, '—': 0.6 };
+
+  // Same weighting as core/alignment.py: syllables plus punctuation pauses,
+  // so long Hungarian compounds and sentence ends do not make the
+  // highlight drift ahead.
+  function wordWeights(words) {
+    return (words || []).map((word) => {
+      let count = 0;
+      let previous = false;
+      let digits = 0;
+      for (const ch of String(word)) {
+        const vowel = VOWELS.has(ch);
+        if (vowel && !previous) count += 1;
+        previous = vowel;
+        if (ch >= '0' && ch <= '9') digits += 1;
+      }
+      count += digits * 2;
+      if (!count && /[\p{L}\p{N}]/u.test(String(word))) count = 1;
+      const tail = String(word).replace(/["'”’»«)]+$/u, '');
+      const last = tail.slice(-1);
+      return Math.max(count + (PAUSE_AFTER[last] || 0), 0.2);
+    });
+  }
+
+  function wordIndexFromWeights(currentTime, durationSec, weights) {
+    const list = Array.isArray(weights) ? weights : [];
+    if (!list.length) return -1;
+    const duration = Number(durationSec);
+    if (!Number.isFinite(duration) || duration <= 0) return 0;
+    const total = list.reduce((sum, w) => sum + w, 0) || 1;
+    const target = (Math.max(0, Number(currentTime) || 0) / duration) * total;
+    let cursor = 0;
+    for (let i = 0; i < list.length; i += 1) {
+      cursor += list[i];
+      if (target < cursor) return i;
+    }
+    return list.length - 1;
+  }
+
+  // Measured [start, end] pairs per displayed word (from speech recognition).
+  function wordIndexFromTimings(currentTime, timings) {
+    const list = Array.isArray(timings) ? timings : [];
+    if (!list.length) return -1;
+    const t = Math.max(0, Number(currentTime) || 0);
+    let index = 0;
+    for (let i = 0; i < list.length; i += 1) {
+      if (Number(list[i][0]) <= t) index = i;
+      else break;
+    }
+    return index;
+  }
+
   function seekTarget(segments, currentIndex, currentTime, deltaSec) {
     const list = Array.isArray(segments) ? segments : [];
     if (!list.length) return { segmentIndex: 0, offsetSec: 0 };
@@ -121,6 +174,9 @@
   }
 
   return {
+    wordWeights,
+    wordIndexFromWeights,
+    wordIndexFromTimings,
     DEFAULT_SECONDS_PER_WORD,
     estimateRemainingAudio,
     playbackResumeTarget,

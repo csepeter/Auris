@@ -801,6 +801,7 @@ if (studioDocument) {
     importVoiceProfile,
     loadNarratorRefText,
     loadRefText,
+    loadCharacters,
     previewChar,
     removeNarratorRef,
     removeRef,

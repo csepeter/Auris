@@ -30,9 +30,13 @@
       </div>
       <div class="settings-category" id="settings-dictionary" data-settings-category="dictionary" role="tabpanel" hidden>
         <section class="settings-section"><h2>Magyar kiejtési szótár</h2><p>Az eredeti szöveg megmarad. A felolvasás a megadott alakot használja, teljes szavakra és kifejezésekre, kis- és nagybetűt megkülönböztetve. A könyv saját szabálya elsőbbséget élvez.</p>
-          <form class="experience-form" onsubmit="event.preventDefault();savePronunciation()"><label>Érvényesség<select id="dictionary-book"><option value="">Minden könyv</option></select></label><div class="form-grid"><label>A szövegben<input id="dictionary-source" placeholder="Gorcsev" required maxlength="200"></label><label>Így olvassa<input id="dictionary-replacement" placeholder="Gorcsef" required maxlength="200"></label></div><button class="btn btn-primary" type="submit">Szabály mentése</button></form>
+          <form class="experience-form" onsubmit="event.preventDefault();savePronunciation()"><label>Érvényesség<select id="dictionary-book"><option value="">Minden könyv</option></select></label><div class="form-grid"><label>A szövegben<input id="dictionary-source" placeholder="Gorcsev" required maxlength="200"></label><label>Így olvassa<input id="dictionary-replacement" placeholder="Gorcsef" required maxlength="200"></label></div><p id="dictionary-ipa" class="muted" aria-live="polite"></p><button class="btn btn-primary" type="submit">Szabály mentése</button></form>
           <p class="muted">Mentés vagy törlés után az érintett könyvek felolvasása újragenerálódik. Az exportált fájlok megmaradnak.</p><p id="dictionary-message" role="status"></p><div id="dictionary-list"></div>
           <div class="experience-form"><label>Próbamondat<textarea id="dictionary-preview-input" rows="3">Gorcsev belépett a szobába.</textarea></label><button class="btn btn-ghost" onclick="previewPronunciation()">Felolvasandó szöveg ellenőrzése</button><p id="dictionary-preview-output" aria-live="polite"></p></div>
+          <h3>Ellenőrzésre javasolt szavak</h3>
+          <p>Egy könyv kiválasztása után a program kigyűjti a neveket, helyeket és idegennek tűnő szavakat (magyar névfelismerővel, ha a HuSpaCy telepítve van). Az idegen írásképűek elöl állnak. Kattints egy szóra a szabály kitöltéséhez; az olvasóban egy szó kijelölésével közvetlenül is javíthatod a kiejtést.</p>
+          <p><button class="btn btn-ghost" type="button" onclick="loadPronunciationCandidates()">Szavak kigyűjtése a kiválasztott könyvből</button></p>
+          <div id="dictionary-candidates" class="dictionary-candidates"></div>
         </section>
       </div>
       <div class="settings-category" id="settings-storage" data-settings-category="storage" role="tabpanel" hidden>
@@ -454,6 +458,35 @@
         <option value="2">2 — két modell / két CUDA-folyam</option>
       </select>
       <span class="muted" style="font-size:.78rem">Csak export közben tölt be második OmniVoice-modellt. Ha nincs elég memória vagy egy munkás hibázik, egy munkással folytatja.</span>
+    </div>
+  </section>
+
+  <!-- Publishing -->
+  <section class="settings-section">
+    <div class="settings-section-title">Kiadás és Audiobookshelf</div>
+    <div class="setting-row">
+      <label>Alapértelmezett felolvasó (a könyvnél felülírható)</label>
+      <input type="text" id="narrator-credit" class="text-input" maxlength="200" placeholder="pl. mesterséges hang">
+    </div>
+    <div class="setting-row">
+      <label>Nyitó szöveg sablonja <span class="muted">({title}, {author}, {narrator}, {series})</span></label>
+      <input type="text" id="export-intro-template" class="text-input">
+    </div>
+    <div class="setting-row">
+      <label>Záró szöveg sablonja</label>
+      <input type="text" id="export-outro-template" class="text-input">
+    </div>
+    <p class="section-desc">Az <a href="https://www.audiobookshelf.org/" target="_blank" rel="noopener">Audiobookshelf</a> saját gépen futó hangoskönyv-szerver telefonos alkalmazásokkal, RSS-sel és Chromecasttal. Az API-kulcsot az Audiobookshelf <em>Beállítások → Felhasználók → API-token</em> menüjében találod.</p>
+    <div class="setting-row setting-grid-3">
+      <label>Szerver címe<input type="text" id="abs-url" class="text-input" placeholder="http://192.168.1.10:13378"></label>
+      <label>API-kulcs<input type="password" id="abs-api-token" class="text-input" autocomplete="off"></label>
+      <label>Könyvtár
+        <select id="abs-library" class="select-input"><option value="">– betöltés után választható –</option></select>
+      </label>
+    </div>
+    <div class="setting-row">
+      <button class="btn btn-ghost btn-sm" type="button" onclick="loadAbsLibraries()">Könyvtárak betöltése</button>
+      <span id="abs-hint" class="status-hint"></span>
     </div>
   </section>
 

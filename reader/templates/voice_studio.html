@@ -156,6 +156,16 @@
       </span>
     </label>
     <div id="character-voice-note" class="studio-note hidden" role="status"></div>
+    <details class="assist-panel" id="assist-panel">
+      <summary>Nyelvi modelles segéd</summary>
+      <p class="studio-note">A Beállításokban megadott nyelvi modell (helyi vagy OpenAI) a szereplők mondatai és leírása alapján hangot javasol, illetve egy második körben átnézi, ki mondja a párbeszédeket. A kézzel beállított beszélőket nem módosítja.</p>
+      <div class="assist-actions">
+        <button type="button" class="btn btn-sm btn-primary" id="assist-voices">Hangjavaslat a szereplőkhöz</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="assist-review">Beszélők ellenőrzése (második kör)</button>
+      </div>
+      <p id="assist-status" class="assist-status" role="status" aria-live="polite"></p>
+      <div id="assist-suggestions" class="assist-suggestions"></div>
+    </details>
     <div id="char-list" class="char-list" aria-live="polite">
       <div class="loading-spinner">Szereplők betöltése…</div>
     </div>
@@ -172,4 +182,5 @@
 <script>window.NARRATOR_REF_AUDIO_NAME = {{ (book.narrator_ref_audio_name or '')|tojson }};</script>
 <script>window.CURRENT_CHAPTER_ID = {{ current_chapter.id if current_chapter else 'null' }};</script>
 <script src="/static/js/voice_studio.js"></script>
+<script src="/static/js/voice-assist.js"></script>
 {% endblock %}

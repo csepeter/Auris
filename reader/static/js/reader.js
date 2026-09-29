@@ -348,6 +348,7 @@ async function openChapter(chapterId, options = {}) {
   renderContent(segments);
   updateRemainingTime();
   refreshChapterGenerationPanel(chapterId);
+  loadWordTimings(chapterId);
 
   document.getElementById('chapter-content').scrollTop = 0;
 
@@ -1133,7 +1134,7 @@ async function playSegment(idx, options = {}) {
     await positionAudio(audio, offsetSec, data.duration_sec);
     if (gen !== _playGen || !isPlaying) return;
     _loadedSegIdx = idx;
-    startWordHighlight(idx, data.duration_sec);
+    startWordHighlight(idx, data.duration_sec, data.cache_key);
     await audio.play();
     _savedAudioResume = null;
 
@@ -1234,8 +1235,17 @@ function stopPlayback() {
 // ── Word-level highlighting ───────────────────────────────────────────────────
 
 let _wordRafId = null;
+let _wordTimings = {};
 
-function startWordHighlight(segIdx, durationSec) {
+async function loadWordTimings(chapterId) {
+  _wordTimings = {};
+  try {
+    const data = await fetch(`/api/books/${BOOK_ID}/chapters/${chapterId}/word-timings`).then(r => r.ok ? r.json() : {});
+    if (currentChapterId === chapterId) _wordTimings = data.timings || {};
+  } catch (_) { /* estimated highlighting remains available */ }
+}
+
+function startWordHighlight(segIdx, durationSec, cacheKey) {
   stopWordHighlight();
   if (!durationSec) return;
 
@@ -1243,15 +1253,16 @@ function startWordHighlight(segIdx, durationSec) {
   if (!wordEls.length) return;
 
   const n = wordEls.length;
+  const key = cacheKey || segments[segIdx]?.cache_key;
+  const measured = _wordTimings[key];
+  const timings = Array.isArray(measured) && measured.length === n ? measured : null;
+  const weights = timings ? null : AurisListening.wordWeights([...wordEls].map(el => el.textContent));
 
   function tick() {
     // audio.currentTime already advances in media time at the selected playbackRate.
-    const wordIdx = AurisListening.wordIndexFromMediaTime(
-      audio.currentTime,
-      0,
-      durationSec,
-      n,
-    );
+    const wordIdx = timings
+      ? AurisListening.wordIndexFromTimings(audio.currentTime, timings)
+      : AurisListening.wordIndexFromWeights(audio.currentTime, durationSec, weights);
     wordEls.forEach((el, i) => el.classList.toggle('playing', i === wordIdx));
     if (isPlaying && !audio.paused) _wordRafId = requestAnimationFrame(tick);
   }
@@ -1782,9 +1793,86 @@ function applyExportPreset(preset) {
     setExportRadio('exp-audio', 'm4b');
     setExportRadio('exp-sub', 'none');
     selectAllExportChapters(true);
+  } else if (preset === 'book-epub3') {
+    setExportRadio('exp-mode', 'chapterwise');
+    setExportRadio('exp-audio', 'mp3');
+    setExportRadio('exp-sub', 'none');
+    selectAllExportChapters(true);
+  } else if (preset === 'book-abs') {
+    setExportRadio('exp-mode', 'chapterwise');
+    setExportRadio('exp-audio', 'm4b');
+    setExportRadio('exp-sub', 'none');
+    selectAllExportChapters(true);
+  } else if (preset === 'book-acx') {
+    setExportRadio('exp-mode', 'chapterwise');
+    setExportRadio('exp-audio', 'mp3');
+    setExportRadio('exp-sub', 'none');
+    selectAllExportChapters(true);
+  } else if (preset === 'chapter-daw') {
+    setExportRadio('exp-mode', 'chapter');
+    setExportRadio('exp-audio', 'wav');
+    setExportRadio('exp-sub', 'none');
   }
+  const packages = {
+    'book-epub3': 'epub3', 'book-abs': 'audiobookshelf', 'book-acx': 'acx', 'chapter-daw': 'daw',
+  };
+  const packageSelect = document.getElementById('export-package');
+  if (packageSelect) packageSelect.value = packages[preset] || 'none';
+  const intro = document.getElementById('export-intro');
+  const outro = document.getElementById('export-outro');
+  const sample = document.getElementById('export-sample');
+  const book = ['book-m4b', 'book-epub3', 'book-abs', 'book-acx'].includes(preset);
+  if (intro) intro.checked = book;
+  if (outro) outro.checked = book;
+  if (sample) sample.checked = preset === 'book-acx';
   updateExportScope();
 }
+
+async function loadPublishingInfo() {
+  try {
+    const info = await fetch(`/api/books/${BOOK_ID}/publishing`).then(r => r.json());
+    const credit = document.getElementById('export-narrator-credit');
+    if (credit) credit.value = info.narrator_credit || '';
+    const name = document.getElementById('export-music-name');
+    if (name) name.textContent = info.bg_music_name ? `Háttérzene: ${info.bg_music_name}` : 'Nincs háttérzene';
+    const level = document.getElementById('export-music-db');
+    if (level) level.value = info.bg_music_db ?? -22;
+    const value = document.getElementById('export-music-db-value');
+    if (value) value.textContent = String(info.bg_music_db ?? -22).replace('-', '−');
+  } catch (_) { /* optional panel */ }
+}
+
+async function savePublishing(patch) {
+  await fetch(`/api/books/${BOOK_ID}/publishing`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(patch),
+  });
+}
+
+document.getElementById('export-narrator-credit')?.addEventListener('change', event => {
+  savePublishing({narrator_credit: event.target.value});
+});
+document.getElementById('export-music-db')?.addEventListener('input', event => {
+  document.getElementById('export-music-db-value').textContent = String(event.target.value).replace('-', '−');
+});
+document.getElementById('export-music-db')?.addEventListener('change', event => {
+  savePublishing({bg_music_db: Number(event.target.value)});
+});
+document.getElementById('export-music-file')?.addEventListener('change', async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  const response = await fetch(`/api/books/${BOOK_ID}/background-music`, {method: 'POST', body: form});
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) showToast(data.error || 'A zene feltöltése nem sikerült.', 'err');
+  event.target.value = '';
+  loadPublishingInfo();
+});
+document.getElementById('export-music-remove')?.addEventListener('click', async () => {
+  await fetch(`/api/books/${BOOK_ID}/background-music`, {method: 'DELETE'});
+  loadPublishingInfo();
+});
+loadPublishingInfo();
 
 function selectedExportChapters() {
   const all = [...document.querySelectorAll('input[name="exp-chapter"]')];
@@ -1881,6 +1969,11 @@ document.getElementById('do-export-btn').onclick = async () => {
         audio_fmt: audioFmt,
         sub_fmt: subFmt,
         chapters: selectedChapters,
+        package: document.getElementById('export-package')?.value || 'none',
+        intro: Boolean(document.getElementById('export-intro')?.checked),
+        outro: Boolean(document.getElementById('export-outro')?.checked),
+        sample: Boolean(document.getElementById('export-sample')?.checked),
+        abs_upload: Boolean(document.getElementById('export-abs-upload')?.checked),
       }),
     });
     const d = await r.json();

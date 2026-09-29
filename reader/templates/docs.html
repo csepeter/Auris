@@ -21,6 +21,8 @@
         <a href="#engine-lifecycle">Motor és beállítások</a>
         <a href="#quality">Minőségellenőrzés</a>
         <a href="#export">Export és gyorsítótár</a>
+        <a href="#publishing">Kiadási csomagok</a>
+        <a href="#assist">Nyelvi modelles segéd és kiejtés</a>
         <a href="#storage">Tárhely és mentés</a>
         <a href="#versioning">Verzió és frissítés</a>
         <a href="#performance">Teljesítmény</a>
@@ -988,6 +990,7 @@ ffprobe -version</code></pre>
             <li><strong>Kijelölt fejezetek:</strong> vizuális fejezetlistából választhatók; az API a <code>1,3,5-8</code> alakot is elfogadja.</li>
             <li><strong>WAV:</strong> veszteségmentes és mindig elérhető.</li>
             <li><strong>MP3:</strong> ffmpeg szükséges a PATH környezeti változóban.</li>
+            <li><strong>Opus:</strong> 64 kbit/s, beszédre hangolt; negyedakkora, mint az MP3. <strong>FLAC:</strong> veszteségmentes, tömörített.</li>
             <li><strong>M4B:</strong> a kijelölt fejezeteket egy AAC hangoskönyvbe írja, fejezethatárokkal és borítóval. A fejezetek között 2 másodperc csend van. A Könyv adatai panelen megadott nyelv, sorozat, sorozatszám, leírás, kiadó és kiadási dátum is bekerül. FFmpeg és ffprobe szükséges.</li>
             <li><strong>Fejezetenkénti ZIP:</strong> a fájlnevek sorszámmal kezdődnek (<code>01_Első_fejezet.mp3</code>), így az azonos című fejezetek sem írják felül egymást.</li>
             <li>Az MP3 fájlokba bekerül a fejezet címe, a könyv címe, a szerző és fejezetenkénti exportnál a sorszám is.</li>
@@ -1025,6 +1028,68 @@ ffprobe -version</code></pre>
             futó GPU-csomag befejeződik, de utána új csomag nem indul, két
             exportsáv esetén mindkét sáv megáll.
           </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="docs-section" id="publishing">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">07b</span>
+        <div>
+          <h2>Kiadási csomagok, nyitó szöveg és háttérzene</h2>
+          <p>Az olvasó <strong>Exportálás</strong> paneljén a <strong>Cél</strong> mező egy lépésben beállítja a formátumot és a csomagot. Minden cél külön almappába kerül (<code>mp3</code>, <code>opus</code>, <code>acx</code>, <code>epub3</code>…), így a csomagok nem keverednek.</p>
+        </div>
+      </div>
+      <div class="settings-guide-wrap">
+        <table class="settings-guide">
+          <thead><tr><th>Cél</th><th>Mit kapsz?</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Felolvasós e-könyv (EPUB3)</strong></td><td>EPUB 3 könyv beágyazott MP3-hangokkal és Media Overlays időzítéssel: a Thorium, Readest, Apple Books és hasonló olvasók felolvasás közben kiemelik az aktuális mondatot. A csomag az EPUBCheck szerint hibátlan.</td></tr>
+            <tr><td><strong>Audiobookshelf</strong></td><td>Az Audiobookshelf mappaszerkezete (<code>Szerző/Sorozat/Vol N - Év - Cím {Felolvasó}</code>), <code>metadata.json</code>, <code>desc.txt</code>, <code>reader.txt</code>, <code>cover.jpg</code>. Beállított szerver esetén közvetlen feltöltés is kérhető.</td></tr>
+            <tr><td><strong>Kiadói csomag (ACX-szerű)</strong></td><td>Fejezetenként 192 kbit/s-os, 44,1 kHz-es mono MP3 és ötperces minta. A hangerőt a Minőségellenőrzés hangerő-jelentésével érdemes ellenőrizni.</td></tr>
+            <tr><td><strong>Hangszerkesztő (DAW)</strong></td><td>Az aktuális fejezet ZIP-ben: szereplőnként külön WAV-sáv, összekevert <code>mix.wav</code>, Audacity-címkesáv (<code>labels.txt</code>) és <code>.lof</code> projektlista. Az Audacity <em>Fájl → Importálás</em> menüjében a <code>.lof</code> fájlt megnyitva minden sáv a helyére kerül.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Nyitó és záró szöveg</h3>
+          <p>A könyvcélok alapból a narrátor hangján felolvasott nyitó (<em>Cím. Írta: Szerző. Felolvassa: …</em>) és záró (<em>Vége. …</em>) szöveget tesznek a könyv elejére és végére, külön fejezetként. A sablon a Beállítások → Generálás és export → <strong>Kiadás és Audiobookshelf</strong> alatt szerkeszthető (<code>{title}</code>, <code>{author}</code>, <code>{narrator}</code>, <code>{series}</code>). A felolvasó neve könyvenként az export panel <strong>Felolvasó és háttérzene</strong> részében adható meg.</p>
+        </div>
+        <div>
+          <h3>Háttérzene</h3>
+          <p>Könyvenként feltölthető egy zene (MP3, WAV, OGG, FLAC, M4A, Opus). Exportkor a zene ismétlődik a hang alatt, beszéd közben automatikusan lehalkul (sidechain), a hangereje −40 és −10 dB között állítható. Az olvasóbeli lejátszást nem érinti. Csak olyan zenét használj, amelynek felhasználására jogod van.</p>
+        </div>
+      </div>
+      <h3>Pontos szókiemelés</h3>
+      <p>A Minőségellenőrzés a beszédfelismerővel a szavak kezdő- és végidejét is megméri, és ezt az olvasó a szókiemeléshez használja. Ahol még nincs mérés, a kiemelés a szavak szótagszámát és az írásjelek utáni szünetet veszi figyelembe, így a hosszú összetett szavaknál és a mondatvégeken sem szalad előre.</p>
+    </section>
+
+    <section class="docs-section" id="assist">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">AI</span>
+        <div>
+          <h2>Nyelvi modelles segéd és kiejtés szövegkörnyezetben</h2>
+          <p>A Beállításokban megadott helyi vagy OpenAI nyelvi modellt használja. Helyi modellnél a beszédmotor az idejére felszabadítja a videomemóriát.</p>
+        </div>
+      </div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Hangstúdió → Nyelvi modelles segéd</h3>
+          <ul class="docs-check-list">
+            <li><strong>Hangjavaslat a szereplőkhöz:</strong> a szereplő saját mondatai és a róla szóló narráció alapján nemet, életkort és hangmagasságot javasol, rövid magyar jellemzéssel. Szereplőnként vagy egyszerre alkalmazható.</li>
+            <li><strong>Beszélők ellenőrzése (második kör):</strong> fejezetenként átnézi a párbeszédek beszélőit, és csak a hibásakat javítja. Kizárólag a szereplőlistában szereplő neveket fogad el, a kézzel beállított beszélőket nem módosítja. A javítások forrása <code>llm-review</code>.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Kiejtés javítása az olvasóban</h3>
+          <ol class="docs-number-list">
+            <li>Jelölj ki egy szót (legfeljebb négyet) a szövegben, majd kattints a megjelenő <strong>Kiejtés</strong> gombra.</li>
+            <li>Az ablak megmutatja a jelenlegi kiejtést IPA-átírásban (ehhez a Piper telepítése szükséges).</li>
+            <li>Írd be, hogyan hangozzon el, és a <strong>Meghallgatás</strong> gombbal hallgasd meg a teljes mondatot a narrátor hangján.</li>
+            <li>A <strong>Mentés</strong> a könyvhöz vagy minden könyvhöz rögzíti a szabályt.</li>
+          </ol>
+          <p>A Beállítások → Kiejtési szótár <strong>Ellenőrzésre javasolt szavak</strong> listája könyvenként kigyűjti a neveket, helyeket és idegen írásképű szavakat (HuSpaCy-val, ha telepítve van).</p>
         </div>
       </div>
     </section>

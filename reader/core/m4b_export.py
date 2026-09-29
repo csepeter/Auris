@@ -13,7 +13,7 @@ import soundfile as sf
 
 def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
            book_author='Unknown', mastering=False, book_metadata=None,
-           on_progress=None, check_cancelled=None):
+           on_progress=None, check_cancelled=None, background=None):
     from core import exporter as e
 
     if not chapters_data:
@@ -129,6 +129,14 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
                 for path, _ in outcomes:
                     if path is not None:
                         path.unlink(missing_ok=True)
+
+        if background and background.get('path'):
+            report('Háttérzene keverése…')
+            for piece in pieces:
+                mixed = piece[0].with_name(piece[0].stem + '-music.wav')
+                if e.mix_background(str(piece[0]), background['path'], str(mixed),
+                                    music_db=background.get('db', -22.0)):
+                    piece[0] = mixed
 
         # 3) Chapters are joined; boundaries come from the actual file lengths.
         report('Fejezetek összefűzése…')

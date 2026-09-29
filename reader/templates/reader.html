@@ -204,6 +204,10 @@
             <option value="chapter-wav">Aktuális fejezet szerkesztéshez</option>
             <option value="selected-mp3">Kijelölt fejezetek megosztáshoz</option>
             <option value="book-m4b">Hangoskönyv M4B formátumban</option>
+            <option value="book-epub3">Felolvasós e-könyv (EPUB3, kiemeléssel)</option>
+            <option value="book-abs">Audiobookshelf-könyvtárba</option>
+            <option value="book-acx">Kiadói csomag (ACX-szerű MP3 + minta)</option>
+            <option value="chapter-daw">Aktuális fejezet hangszerkesztőbe (sávonként)</option>
             <option value="custom">Egyéni beállítások</option>
           </select>
         </div>
@@ -224,7 +228,36 @@
           <label><input type="radio" name="exp-audio" value="wav" checked> WAV (veszteségmentes)</label>
           <label><input type="radio" name="exp-audio" value="mp3"> MP3 (ffmpeg szükséges)</label>
           <label><input type="radio" name="exp-audio" value="m4b"> M4B fejezetekkel (ffmpeg szükséges)</label>
+          <label><input type="radio" name="exp-audio" value="opus"> Opus (kis méret, jó beszédminőség)</label>
+          <label><input type="radio" name="exp-audio" value="flac"> FLAC (veszteségmentes, tömörített)</label>
         </div>
+        <div class="export-section">
+          <label for="export-package"><b>Kiadási csomag</b></label>
+          <select id="export-package" class="select-input">
+            <option value="none">Nincs – csak a hangfájlok</option>
+            <option value="epub3">EPUB3 felolvasós könyv (szövegkiemeléssel, MP3)</option>
+            <option value="audiobookshelf">Audiobookshelf mappa és metaadatok</option>
+            <option value="acx">Kiadói csomag: 192 kbit/s MP3, 44,1 kHz, ötperces minta</option>
+            <option value="daw">Hangszerkesztő (Audacity): sávonként, címkékkel</option>
+          </select>
+          <label><input type="checkbox" id="export-intro"> Nyitó szöveg (cím, szerző, felolvasó)</label>
+          <label><input type="checkbox" id="export-outro"> Záró szöveg („Vége.”)</label>
+          <label id="export-abs-upload-row"><input type="checkbox" id="export-abs-upload"> Feltöltés az Audiobookshelf szerverre</label>
+          <label><input type="checkbox" id="export-sample"> Ötperces minta MP3-ban</label>
+        </div>
+        <details class="export-section export-publishing">
+          <summary><b>Felolvasó és háttérzene</b></summary>
+          <label for="export-narrator-credit">Felolvasó neve a nyitó szövegben</label>
+          <input type="text" id="export-narrator-credit" class="text-input" maxlength="200" placeholder="pl. mesterséges hang">
+          <div class="export-music-row">
+            <span id="export-music-name" class="muted">Nincs háttérzene</span>
+            <label class="btn btn-sm btn-ghost file-picker"><span>Zene kiválasztása</span><input type="file" id="export-music-file" accept=".mp3,.wav,.ogg,.flac,.m4a,.opus,audio/*"></label>
+            <button type="button" class="btn btn-sm btn-ghost" id="export-music-remove">Törlés</button>
+          </div>
+          <label for="export-music-db">Zene hangereje: <span id="export-music-db-value">−22</span> dB</label>
+          <input type="range" id="export-music-db" min="-40" max="-10" step="1" value="-22">
+          <p class="muted export-note">A zene ismétlődik a hang alatt, és beszéd közben automatikusan lehalkul. Csak exportkor kerül a hangba.</p>
+        </details>
         <div class="export-section">
           <b>Felirat</b>
           <label><input type="radio" name="exp-sub" value="none" checked> Nincs felirat</label>
@@ -275,5 +308,6 @@
 <script>window.SINGLE_NARRATOR_MODE = {{ 1 if book.single_narrator_mode else 0 }};</script>
 <script src="/static/js/listening.js"></script>
 <script src="/static/js/reader.js"></script>
+<script src="/static/js/pronunciation-popover.js"></script>
 <script src="/static/js/text-editor.js"></script>
 {% endblock %}
