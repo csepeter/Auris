@@ -1361,6 +1361,11 @@ ffprobe -version</code></pre>
         miatt nem bitazonos hangot ad, ezért a már elkészült hangok cache-e érvényes marad,
         de az újrageneráltak kissé eltérhetnek. Az Automatikus mód továbbra is a CUDA Graphot
         választja; a hibrid módot tudatosan kell bekapcsolni.</p>
+      <p>Teljes könyv generálásakor vagy exportjakor 20 GB-nál nagyobb videokártyán két modellpéldány dolgozik
+        párhuzamosan. Ilyenkor a CUDA Graph szünetel, mert a két sáv közös véletlenszám-generátora miatt a
+        gráfrögzítés összeomlást okozna; a Triton-kernelek közben is működnek. Saját mérés, 48 klónozott mondat:
+        két sáv Tritonnal 13,2 s, egy sáv hibrid módban 15,6 s, egy sáv CUDA Graph-fal 18,8 s. Az export után a
+        gráfok visszakapcsolnak az olvasó lejátszásához.</p>
       <p>AMD-n először a <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/">gyártó kompatibilitási útmutatója</a>
         szerinti ROCm PyTorch/torchaudio párost telepítsd az Auris környezetébe.
         A telepítő a működő ROCm-környezetet felismeri és megőrzi; önállóan nem

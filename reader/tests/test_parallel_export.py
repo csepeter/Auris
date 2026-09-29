@@ -93,6 +93,22 @@ class ParallelExportPartitionTest(unittest.TestCase):
         self.assertEqual(primary.prompts, [("speaker.wav", "Reference.")])
         self.assertEqual(replica.prompts, [("speaker.wav", "Reference.")])
 
+    def test_close_resumes_cuda_graphs_on_primary(self):
+        from unittest.mock import patch
+
+        primary = _FakeExportEngine("lane-1")
+        primary.model = object()
+        replica = _FakeExportEngine("lane-2")
+        replica.unload = lambda: None
+        pool = TTSExportPool(primary, requested_workers=2)
+        pool.engines = [primary, replica]
+        pool._replicas = [replica]
+        primary.set_dedicated_cuda_stream = lambda enabled: None
+        with patch("core.tts_accel.suspend_cuda_graphs") as suspend:
+            pool.close()
+        suspend.assert_called_once_with(primary.model, False)
+        self.assertEqual(pool.engines, [primary])
+
     def test_non_clone_items_stay_on_primary(self):
         primary = _FakeExportEngine("primary")
         replica = _FakeExportEngine("lane-2")

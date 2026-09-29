@@ -82,6 +82,22 @@ class AccelerationTest(unittest.TestCase):
         self.assertEqual(capture.call_count, 1)
         self.assertIn('capture unsupported', wrapper.disabled_reason)
 
+    def test_suspended_graphs_run_eager_and_resume(self):
+        original = Mock(return_value='eager output')
+        model = SimpleNamespace(forward=None, training=False)
+        wrapper = accel.CUDAGraphForward(SimpleNamespace(forward=original, training=False))
+        model.forward = wrapper
+        ids = torch.zeros(2, 3, 4, dtype=torch.long)
+        mask = torch.zeros(2, 4, dtype=torch.bool)
+        self.assertTrue(accel.suspend_cuda_graphs(model, True))
+        with patch.object(wrapper, '_capture') as capture:
+            self.assertEqual(wrapper(ids, mask), 'eager output')
+        capture.assert_not_called()
+        self.assertTrue(accel.suspend_cuda_graphs(model, False))
+        self.assertFalse(wrapper.suspended)
+        self.assertEqual(wrapper.disabled_reason, '')
+        self.assertFalse(accel.suspend_cuda_graphs(SimpleNamespace(forward=original), True))
+
     def test_eager_installs_scoring_without_graph(self):
         model = SimpleNamespace(_predict_tokens_with_scoring=Mock())
         status = accel.apply_acceleration(model, 'eager')

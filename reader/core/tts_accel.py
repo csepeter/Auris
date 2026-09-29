@@ -23,10 +23,18 @@ matches the installed torch.
 from __future__ import annotations
 
 import logging
+import threading
 from types import MethodType
 from typing import Any
 
 log = logging.getLogger(__name__)
+
+# One CUDA Graph capture at a time in the whole process. PyTorch's
+# torch.cuda.graph() starts with a device-wide synchronize + empty_cache, which
+# is illegal while another export lane is capturing ("cudaErrorIllegalState"):
+# two lanes capturing concurrently crashed full-book exports. Replays and eager
+# forwards on the other lane keep running in parallel.
+_CAPTURE_LOCK = threading.Lock()
 
 ACCEL_MODES = ("off", "auto", "eager", "cuda_graph", "triton", "hybrid")
 # Long-form generation produces several shapes as OmniVoice chunks long text.
@@ -53,6 +61,10 @@ class CUDAGraphForward:
         self._original_forward = model.forward
         self._graphs: dict[tuple, dict] = {}
         self.disabled_reason = ""
+        # Temporarily eager while two export lanes run: capture on one lane
+        # while the other samples from the shared CUDA RNG is illegal
+        # ("Offset increment outside graph capture"). Graphs return afterwards.
+        self.suspended = False
         self._bucket = max(0, int(bucket or 0))
         config = getattr(model, "config", None)
         self._pad_id = int(getattr(config, "audio_mask_id", 1024) or 1024)
@@ -104,29 +116,30 @@ class CUDAGraphForward:
         if static_pos_ids is not None:
             kwargs["position_ids"] = static_pos_ids
 
-        torch.cuda.synchronize()
-        s = torch.cuda.Stream()
-        s.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(s):
-            static_output = self._original_forward(
-                static_input_ids,
-                static_audio_mask,
-                **kwargs,
-            )
-        torch.cuda.current_stream().wait_stream(s)
-        torch.cuda.synchronize()
+        with _CAPTURE_LOCK:
+            torch.cuda.synchronize()
+            s = torch.cuda.Stream()
+            s.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(s):
+                static_output = self._original_forward(
+                    static_input_ids,
+                    static_audio_mask,
+                    **kwargs,
+                )
+            torch.cuda.current_stream().wait_stream(s)
+            torch.cuda.synchronize()
 
-        graph = torch.cuda.CUDAGraph()
-        if self._pool is None:
-            self._pool = torch.cuda.graph_pool_handle()
-        # thread_local: a second export lane launching kernels on its own
-        # stream must not invalidate this lane's capture.
-        with torch.cuda.graph(graph, pool=self._pool, capture_error_mode="thread_local"):
-            static_output = self._original_forward(
-                static_input_ids,
-                static_audio_mask,
-                **kwargs,
-            )
+            graph = torch.cuda.CUDAGraph()
+            if self._pool is None:
+                self._pool = torch.cuda.graph_pool_handle()
+            # thread_local: a second export lane launching kernels on its own
+            # stream must not invalidate this lane's capture.
+            with torch.cuda.graph(graph, pool=self._pool, capture_error_mode="thread_local"):
+                static_output = self._original_forward(
+                    static_input_ids,
+                    static_audio_mask,
+                    **kwargs,
+                )
 
         self.stats["captures"] += 1
         entry = {
@@ -173,7 +186,7 @@ class CUDAGraphForward:
                 position_ids,
             )
 
-        if self.disabled_reason or document_ids is not None:
+        if self.disabled_reason or self.suspended or document_ids is not None:
             return self._original_forward(
                 input_ids, audio_mask, labels, attention_mask, document_ids, position_ids
             )
@@ -306,6 +319,17 @@ def apply_scoring_optimization(model) -> bool:
         _fast_predict_tokens_with_scoring, model
     )
     log.info("OmniVoice greedy CFG scoring optimization installed")
+    return True
+
+
+def suspend_cuda_graphs(model, suspended: bool) -> bool:
+    """Pause/resume CUDA Graph capture+replay on an accelerated model."""
+    forward = getattr(model, "forward", None)
+    if not isinstance(forward, CUDAGraphForward):
+        return False
+    forward.suspended = bool(suspended)
+    if suspended:
+        forward.clear()  # free graph memory while the second lane is resident
     return True
 
 

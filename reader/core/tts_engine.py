@@ -1711,7 +1711,15 @@ class TTSExportPool:
             replica.set_dedicated_cuda_stream(True)
             self._replicas.append(replica)
             self.engines.append(replica)
-            log.info("Parallel TTS export ready: 2 model replicas / 2 CUDA streams")
+            # Two lanes + CUDA Graph capture crash on the shared CUDA RNG; two
+            # eager lanes (with Triton kernels when enabled) are also faster
+            # (measured: 13.2 s vs 15.6 s single-lane hybrid for 48 clones).
+            from core.tts_accel import suspend_cuda_graphs
+
+            for engine in self.engines:
+                suspend_cuda_graphs(engine.model, True)
+            log.info("Parallel TTS export ready: 2 model replicas / 2 CUDA streams "
+                     "(CUDA Graphs paused during the export)")
         except Exception as exc:
             log.warning("Second export worker unavailable; using one: %s", exc)
             replica.unload()
@@ -1827,6 +1835,10 @@ class TTSExportPool:
         return outputs  # type: ignore[return-value]
 
     def close(self) -> None:
+        if len(self.engines) > 1:
+            from core.tts_accel import suspend_cuda_graphs
+
+            suspend_cuda_graphs(getattr(self.primary, "model", None), False)
         self.primary.set_dedicated_cuda_stream(False)
         self.primary.worker_label = "primary"
         for replica in self._replicas:

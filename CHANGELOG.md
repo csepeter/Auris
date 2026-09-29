@@ -12,6 +12,20 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.3.1] - 2026-09-29
+
+### Magyar
+
+#### Javítva
+
+- **A teljes könyv generálása vagy exportja 20 GB-nál nagyobb videokártyán összeomolhatott** (legalább a 3.5.0 óta, CUDA Graph és hibrid módban): a két párhuzamos modellsáv egyszerre rögzített CUDA-gráfot, és a közös véletlenszám-generátor miatt a folyamat leállt. A kétsávos export alatt a CUDA Graph most szünetel (a Triton-kernelek maradnak), a gráfrögzítés pedig folyamatszinten egyszerre csak egy helyen fut. Saját mérés, 48 klónozott mondat: két sáv Tritonnal 13,2 s, egy sáv hibrid módban 15,6 s.
+
+### English
+
+#### Fixed
+
+- **Whole-book generation or export could crash on GPUs with more than 20 GB** (since at least 3.5.0, in CUDA Graph and hybrid modes): both parallel model lanes captured CUDA graphs at once and the shared CUDA RNG brought the process down. During a two-lane export CUDA Graphs now pause (Triton kernels stay on), and graph capture runs one at a time per process. Own measurement, 48 cloned sentences: two lanes with Triton 13.2 s, one hybrid lane 15.6 s.
+
 ## [4.3.0] - 2026-09-29
 
 ### Magyar
