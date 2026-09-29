@@ -39,6 +39,8 @@ DEFAULT_SEGMENT_PAUSE_SEC = 0.35
 DIALOGUE_TURN_PAUSE_SEC = 0.55
 PARAGRAPH_PAUSE_SEC = 0.85
 ELLIPSIS_PAUSE_SEC = 1.5
+# Silence between chapters of a single-file audiobook (M4B).
+CHAPTER_GAP_SEC = 2.0
 MASTERING_TARGET_I = -19.0
 MASTERING_TARGET_LRA = 9.0
 MASTERING_TARGET_TP = -3.0
@@ -48,7 +50,6 @@ MASTERING_TARGET_TP = -3.0
 # every sentence independently (which would create audible pumping).
 _MASTERING_PRE_FILTERS = (
     'highpass=f=55,'
-    'lowpass=f=16000,'
     'equalizer=f=180:t=q:w=1:g=-1,'
     'equalizer=f=3500:t=q:w=1:g=1,'
     'acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:'
@@ -434,7 +435,9 @@ def export_chapter_zip(
     os.makedirs(output_dir, exist_ok=True)
     zip_path = os.path.join(output_dir, f'{safe_book}_chapters.zip')
 
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    used_names: set[str] = set()
+    # Encoded audio does not compress; storing avoids a slow, useless deflate.
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_STORED) as zf:
         for fallback_number, ch in enumerate(chapters_data, 1):
             track_number = int(ch.get('chapter_number') or fallback_number)
             result = export_single_chapter(
@@ -444,7 +447,12 @@ def export_chapter_zip(
                 book_author=book_author,
                 track_number=track_number,
             )
-            ch_safe = _safe_name(ch['chapter_title'])
+            ch_safe = f"{track_number:02d}_{_safe_name(ch['chapter_title'])}"
+            base, suffix = ch_safe, 2
+            while ch_safe.lower() in used_names:
+                ch_safe = f'{base}_{suffix}'
+                suffix += 1
+            used_names.add(ch_safe.lower())
             ext = result['audio_fmt']
             zf.write(result['audio_path'], f'{ch_safe}.{ext}')
             if result['subtitle_path']:
@@ -493,8 +501,16 @@ def export_chapter_folder(
     return {'directory_path': output_dir, 'chapters': files}
 
 
+def _ffmetadata_plain(value: str) -> str:
+    """The single-line text FFmpeg stores for a metadata value."""
+    return ' '.join(str(value or '').replace('\r', '\n').split('\n'))
+
+
 def _ffmetadata_value(value: str) -> str:
-    return str(value or '').replace('\\', '\\\\').replace('=', '\\=').replace(';', '\\;').replace('#', '\\#').replace('\n', ' ')
+    return (
+        _ffmetadata_plain(value).replace('\\', '\\\\').replace('=', '\\=')
+        .replace(';', '\\;').replace('#', '\\#')
+    )
 
 
 def export_m4b(book_title, chapters_data, character_colors=None, *, sub_fmt='none',

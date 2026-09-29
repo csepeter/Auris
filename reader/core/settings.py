@@ -124,19 +124,62 @@ DEFAULTS: dict = {
 }
 
 
+_load_cache: dict[str, tuple[tuple[int, int], dict]] = {}
+_load_cache_lock = threading.Lock()
+
+
+def _normalize_loaded(saved: dict) -> dict:
+    merged = {**DEFAULTS, **saved}
+    narrator_instruct = str(merged.get('narrator_instruct') or '').strip().lower()
+    if narrator_instruct in {'', LEGACY_NARRATOR_INSTRUCT.lower()}:
+        merged['narrator_instruct'] = DEFAULT_NARRATOR_INSTRUCT
+    return merged
+
+
 def load() -> dict:
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if SETTINGS_FILE.exists():
+    """Return settings, cached by file identity.
+
+    A transient read failure (for example while ``save`` replaces the file on
+    Windows) must never silently switch the app to defaults: that would flip
+    the active TTS engine mid-session. The last good copy is used instead.
+    """
+    path = SETTINGS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cache_key = str(path)
+    last_error = None
+    for attempt in range(4):
         try:
-            with open(SETTINGS_FILE, encoding='utf-8') as f:
-                saved = json.load(f)
-            merged = {**DEFAULTS, **saved}
-            narrator_instruct = str(merged.get('narrator_instruct') or '').strip().lower()
-            if narrator_instruct in {'', LEGACY_NARRATOR_INSTRUCT.lower()}:
-                merged['narrator_instruct'] = DEFAULT_NARRATOR_INSTRUCT
-            return merged
-        except Exception:
-            pass
+            st = os.stat(path)
+        except FileNotFoundError:
+            return dict(DEFAULTS)
+        except OSError as exc:
+            last_error = exc
+        else:
+            identity = (st.st_mtime_ns, st.st_size)
+            with _load_cache_lock:
+                cached = _load_cache.get(cache_key)
+            if cached and cached[0] == identity:
+                return dict(cached[1])
+            try:
+                with open(path, encoding='utf-8') as f:
+                    saved = json.load(f)
+                if not isinstance(saved, dict):
+                    raise ValueError('settings.json must contain an object')
+                merged = _normalize_loaded(saved)
+                with _load_cache_lock:
+                    _load_cache[cache_key] = (identity, merged)
+                return dict(merged)
+            except (OSError, ValueError) as exc:
+                last_error = exc
+        if attempt < 3:
+            import time
+            time.sleep(0.02 * (attempt + 1))
+    with _load_cache_lock:
+        cached = _load_cache.get(cache_key)
+    if cached:
+        return dict(cached[1])
+    import logging
+    logging.getLogger(__name__).warning('Unable to read settings (%s); using defaults.', last_error)
     return dict(DEFAULTS)
 
 
@@ -147,10 +190,26 @@ def save(updates: dict) -> dict:
         temporary = SETTINGS_FILE.with_suffix('.json.tmp')
         try:
             with open(temporary, 'w', encoding='utf-8') as f:
-                json.dump(current, f, indent=2)
-            os.replace(temporary, SETTINGS_FILE)
+                json.dump(current, f, indent=2, ensure_ascii=False)
+            for attempt in range(5):
+                try:
+                    os.replace(temporary, SETTINGS_FILE)
+                    break
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    import time
+                    time.sleep(0.05 * (attempt + 1))
         finally:
             temporary.unlink(missing_ok=True)
+        try:
+            st = os.stat(SETTINGS_FILE)
+            with _load_cache_lock:
+                _load_cache[str(SETTINGS_FILE)] = (
+                    (st.st_mtime_ns, st.st_size), _normalize_loaded(current)
+                )
+        except OSError:
+            pass
         return current
 
 

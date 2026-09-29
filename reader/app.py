@@ -3,6 +3,7 @@ Offline Ebook Reader — Flask application.
 """
 
 import base64
+from pathlib import Path
 import json
 import logging
 import os
@@ -22,6 +23,8 @@ from flask import (
 )
 
 from core.database import init_db, get_conn
+from core import security
+from core.cancellation import GenerationAborted
 from core import text_editor
 from core.tts_batcher import InteractiveTTSBatcher
 from core.tts_engine import TTSExportPool
@@ -37,6 +40,7 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
+security.install(app)
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -90,7 +94,7 @@ _VOICE_MUTATION_ENDPOINTS = {'update_character', 'update_narrator'}
 _CONSISTENT_READ_ENDPOINTS = {'get_chapter_editor', 'get_chapter', 'get_segments', 'tts_generate'}
 
 
-class JobCancelled(RuntimeError):
+class JobCancelled(GenerationAborted, RuntimeError):
     """Raised at cooperative job boundaries after cached work is persisted."""
 
 
@@ -129,6 +133,27 @@ def _persist_job(job: dict) -> dict:
     return stored
 
 
+def _close_orphaned_job(job_id: str | None) -> None:
+    """Never leave a durable job 'running' after its worker thread exits.
+
+    An active row gates every mutation with 409 until restart, so a runner that
+    returned early (or crashed outside its handlers) must still close it.
+    """
+    if not job_id:
+        return
+    try:
+        stored = jobs.get_job(job_id)
+        if stored and stored['state'] in ('pending', 'running'):
+            jobs.update_job(
+                job_id,
+                state='failed',
+                error=stored.get('error') or 'A feladat váratlanul leállt.',
+                message='A feladat nem fejeződött be',
+            )
+    except Exception:
+        log.exception('Unable to close orphaned job %s', job_id)
+
+
 def _check_job_cancelled(job: dict | None) -> None:
     if job is not None and jobs.is_cancel_requested(job['job_id']):
         raise JobCancelled('Cancellation requested')
@@ -137,7 +162,7 @@ def _check_job_cancelled(job: dict | None) -> None:
 def _active_durable_jobs(*, book_id: int | None = None) -> list[dict]:
     jobs.ensure_jobs()
     return [
-        item for item in jobs.list_jobs(book_id=book_id)
+        item for item in jobs.list_active_jobs(book_id=book_id)
         if item['state'] in ('pending', 'running')
     ]
 
@@ -260,6 +285,10 @@ def _startup():
         try:
             init_db()
             jobs.init_jobs()
+            try:
+                jobs.prune_finished_jobs()
+            except Exception:
+                log.exception('Unable to prune old jobs')
             # Old persisted prompts may contain [surprise-oh]/[question-oh],
             # which ask OmniVoice to vocalize an "oh" before the sentence.
             expression_policy_changed = (
@@ -331,6 +360,52 @@ def _delete_file_if_exists(path: str | None):
             os.remove(path)
     except OSError as exc:
         log.warning('Unable to delete file %s: %s', path, exc)
+
+
+def _save_reference_upload(file_storage, prefix: str) -> str:
+    """Store an uploaded reference WAV under a content-addressed name.
+
+    Audio cache keys include the reference path, so a replacement voice must
+    never reuse the previous file name; otherwise cached audio of the old voice
+    would be returned for the new one.
+    """
+    import hashlib
+    tmp = os.path.join(UPLOAD_DIR, f'.{prefix}.{uuid.uuid4().hex}.upload')
+    file_storage.save(tmp)
+    digest = hashlib.sha256()
+    with open(tmp, 'rb') as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b''):
+            digest.update(chunk)
+    path = os.path.join(UPLOAD_DIR, f'{prefix}_{digest.hexdigest()[:16]}.wav')
+    os.replace(tmp, path)
+    return path
+
+
+def _delete_replaced_reference(old_path: str | None, new_path: str | None, prefix: str):
+    """Remove a superseded managed reference file, never a profile or foreign file."""
+    if not old_path or old_path == new_path:
+        return
+    try:
+        old = Path(old_path).resolve()
+        if old.parent != Path(UPLOAD_DIR).resolve():
+            return
+    except OSError:
+        return
+    name = old.name
+    if name == f'{prefix}.wav' or name.startswith(f'{prefix}_'):
+        _delete_file_if_exists(str(old))
+
+
+def _is_inside_exports(path: str) -> bool:
+    """True when ``path`` resolves inside the export directory.
+
+    ``os.path.commonpath`` raises for paths on different Windows drives, so the
+    check uses resolved ``Path`` ancestry instead.
+    """
+    try:
+        return Path(path).resolve().is_relative_to(Path(exporter.EXPORTS_DIR).resolve())
+    except (OSError, ValueError):
+        return False
 
 
 def _load_book(book_id: int):
@@ -467,6 +542,24 @@ def _ensure_chapter_segments(book_id: int, chapter_id: int):
     return rows
 
 
+_JOB_CACHE_LIMIT = 64
+
+
+def _prune_job_cache(cache: dict) -> None:
+    """Drop the oldest finished in-memory job mirrors; SQLite keeps history."""
+    excess = len(cache) - _JOB_CACHE_LIMIT
+    if excess <= 0:
+        return
+    for job_id in [
+        key for key, value in cache.items()
+        if value.get('state') not in ('pending', 'running')
+    ][:excess]:
+        cache.pop(job_id, None)
+        for chapter_key, mapped in list(_chapter_generation_by_chapter.items()):
+            if mapped == job_id:
+                _chapter_generation_by_chapter.pop(chapter_key, None)
+
+
 def _launch_durable_job_unlocked(stored: dict) -> bool:
     """Attach a persisted pending job to its worker without changing its input."""
     global _chapter_generation_active_job_id
@@ -480,12 +573,14 @@ def _launch_durable_job_unlocked(stored: dict) -> bool:
         book_id = int(payload['book_id'])
         chapter_id = int(payload['chapter_id'])
         with _chapter_generation_lock:
+            _prune_job_cache(_chapter_generation_jobs)
             _chapter_generation_jobs[job_id] = job
             _chapter_generation_by_chapter[(book_id, chapter_id)] = job_id
             _chapter_generation_active_job_id = job_id
         target = _run_chapter_generation
         args = (job_id, book_id, chapter_id)
     elif job_type == 'export_chapter':
+        _prune_job_cache(_export_jobs)
         _export_jobs[job_id] = job
         target = _run_chapter_export
         args = (
@@ -493,6 +588,7 @@ def _launch_durable_job_unlocked(stored: dict) -> bool:
             payload.get('audio_fmt', 'wav'), payload.get('sub_fmt', 'srt'),
         )
     elif job_type == 'export_book':
+        _prune_job_cache(_export_jobs)
         _export_jobs[job_id] = job
         target = _run_chapterwise_export
         args = (
@@ -591,9 +687,8 @@ def durable_job_download(job_id, artifact):
     path = result.get(key) if key else None
     if not isinstance(path, str) or not path:
         return jsonify({'error': 'A feladat eredménye nem található'}), 404
-    exports_dir = os.path.abspath(exporter.EXPORTS_DIR)
     abs_path = os.path.abspath(path)
-    if os.path.commonpath((exports_dir, abs_path)) != exports_dir:
+    if not _is_inside_exports(abs_path):
         return jsonify({'error': 'Forbidden'}), 403
     if not os.path.isfile(abs_path):
         return jsonify({'error': 'Az eredményfájl hiányzik'}), 404
@@ -957,6 +1052,7 @@ def _detect_characters(
         analysis_job.update(state='failed', error=str(exc), message='Az elemzés nem sikerült')
         _persist_job(analysis_job)
     finally:
+        _close_orphaned_job(job_id)
         if uses_local_llm:
             _character_analysis_release()
 
@@ -1229,6 +1325,7 @@ def _run_reanalysis_job(job_id: str, book_id: int, chapter_ids: list[int]) -> No
         job.update(state='failed', error=str(exc), message='Az újraelemzés nem sikerült')
         _persist_job(job)
     finally:
+        _close_orphaned_job(job_id)
         if uses_local_llm:
             _character_analysis_release()
 
@@ -2052,7 +2149,6 @@ def upload_ref_audio(char_id):
     if not f.filename or not f.filename.lower().endswith('.wav'):
         return jsonify({'error': 'Reference audio must be a WAV file'}), 400
     ref_text = (request.form.get('ref_text') or '').strip()
-    path = os.path.join(UPLOAD_DIR, f'ref_{char_id}.wav')
     with get_conn() as conn:
         row = conn.execute(
             'SELECT book_id, ref_audio_path, ref_text FROM characters WHERE id=?',
@@ -2060,15 +2156,15 @@ def upload_ref_audio(char_id):
         ).fetchone()
         if not row:
             return jsonify({'error': 'Not found'}), 404
-        # Invalidate before overwrite so the cache key still matches the old file.
         if row['ref_audio_path']:
             tts.invalidate_voice_prompt(row['ref_audio_path'], row['ref_text'])
-    f.save(path)
+    path = _save_reference_upload(f, f'ref_{char_id}')
     with get_conn() as conn:
         conn.execute(
             'UPDATE characters SET ref_audio_path=?, ref_audio_name=?, ref_text=? WHERE id=?',
             (path, os.path.basename(f.filename), ref_text, char_id),
         )
+    _delete_replaced_reference(row['ref_audio_path'], path, f'ref_{char_id}')
     _clear_book_tts_segments(row['book_id'])
     return jsonify({
         'ok': True,
@@ -2105,7 +2201,6 @@ def upload_narrator_ref_audio(book_id):
     if not f.filename or not f.filename.lower().endswith('.wav'):
         return jsonify({'error': 'Reference audio must be a WAV file'}), 400
     ref_text = (request.form.get('ref_text') or '').strip()
-    path = os.path.join(UPLOAD_DIR, f'narrator_ref_{book_id}.wav')
     with get_conn() as conn:
         prev = conn.execute(
             'SELECT narrator_ref_audio_path, narrator_ref_text FROM books WHERE id=?',
@@ -2117,13 +2212,16 @@ def upload_narrator_ref_audio(book_id):
             tts.invalidate_voice_prompt(
                 prev['narrator_ref_audio_path'], prev['narrator_ref_text']
             )
-    f.save(path)
+    path = _save_reference_upload(f, f'narrator_ref_{book_id}')
     with get_conn() as conn:
         conn.execute(
             'UPDATE books SET narrator_ref_audio_path=?, narrator_ref_audio_name=?, '
             'narrator_ref_text=? WHERE id=?',
             (path, os.path.basename(f.filename), ref_text, book_id),
         )
+    _delete_replaced_reference(
+        prev['narrator_ref_audio_path'], path, f'narrator_ref_{book_id}'
+    )
     tts.invalidate_voice_prompt(path, ref_text or None)
     _clear_book_tts_segments(book_id)
     return jsonify({
@@ -2421,7 +2519,6 @@ def serve_audio(cache_key):
     path = os.path.join(AUDIO_CACHE_DIR, f'{cache_key}.wav')
     if not os.path.exists(path):
         # Portable backups restore audio to new managed paths, retaining cache identity.
-        from pathlib import Path
         with get_conn() as conn:
             row = conn.execute('SELECT audio_path FROM tts_segments WHERE cache_key=? AND audio_path IS NOT NULL', (cache_key,)).fetchone()
         restored = Path(row['audio_path']).resolve() if row else None
@@ -2819,6 +2916,7 @@ def _run_chapter_generation(job_id: str, book_id: int, chapter_id: int) -> None:
         job['message'] = 'A hang készítése nem sikerült'
         _persist_job(job)
     finally:
+        _close_orphaned_job(job_id)
         if generation_pool is not None:
             generation_pool.close()
         _export_exclusive_end()
@@ -2919,7 +3017,7 @@ def generate_chapter_audio(book_id, chapter_id):
             total=total,
         )
         _launch_durable_job(stored)
-        return jsonify(_legacy_job(stored))
+        return jsonify({**stored, **_legacy_job(stored)})
 
 
 @app.route('/api/chapter-generation/status/<job_id>')
@@ -2929,7 +3027,7 @@ def chapter_generation_job_status(job_id):
         stored = jobs.get_job(job_id)
         if not stored or stored['type'] != 'generate_chapter':
             return jsonify({'error': 'Ismeretlen feladat'}), 404
-        return jsonify(stored)
+        return jsonify({**stored, **_legacy_job(stored)})
     _refresh_export_job_fields(job)
     if job.get('job_id'):
         _persist_job(job)
@@ -2995,6 +3093,8 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
         if not ch:
             job['state'] = 'failed'
             job['error'] = 'A fejezet nem található'
+            job['message'] = 'Az export nem sikerült'
+            _persist_job(job)
             return
         segs = _get_chapter_segments(chapter_id, book_id)
         job['total'] = len(segs)
@@ -3052,6 +3152,7 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
         job['message'] = 'Az export nem sikerült'
         _persist_job(job)
     finally:
+        _close_orphaned_job(job_id)
         if export_pool is not None:
             export_pool.close()
         _export_exclusive_end()
@@ -3165,6 +3266,7 @@ def _run_chapterwise_export(
         job['message'] = 'Az export nem sikerült'
         _persist_job(job)
     finally:
+        _close_orphaned_job(job_id)
         if export_pool is not None:
             export_pool.close()
         _export_exclusive_end()
@@ -3292,7 +3394,7 @@ def export_job_status(job_id):
         stored = jobs.get_job(job_id)
         if not stored or stored['type'] not in ('export_chapter', 'export_book'):
             return jsonify({'error': 'Ismeretlen feladat'}), 404
-        return jsonify(stored)
+        return jsonify({**stored, **_legacy_job(stored)})
     # Recompute ETA on every poll so the UI keeps moving while a GPU batch runs.
     _refresh_export_job_fields(job)
     return jsonify(job)
@@ -3301,9 +3403,8 @@ def export_job_status(job_id):
 @app.route('/api/export/download')
 def export_download():
     path = request.args.get('path', '')
-    exports_dir = os.path.abspath(exporter.EXPORTS_DIR)
     abs_path = os.path.abspath(path)
-    if os.path.commonpath((exports_dir, abs_path)) != exports_dir:
+    if not _is_inside_exports(abs_path):
         return 'Forbidden', 403
     if not os.path.exists(abs_path):
         return 'Not found', 404
@@ -3367,7 +3468,7 @@ def docs_page():
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    return jsonify(app_settings.load())
+    return jsonify(security.mask_secrets(app_settings.load()))
 
 
 @app.route('/api/settings', methods=['POST'])
@@ -3392,7 +3493,12 @@ def save_settings():
         'llm_timeout_sec', 'llm_max_output_tokens', 'llm_max_characters',
         'llm_batch_chars',
     }
-    updates = {k: v for k, v in body.items() if k in allowed}
+    updates = security.drop_masked_secrets(
+        {k: v for k, v in body.items() if k in allowed}
+    )
+    for repo_key in ('model_repo', 'higgs_model_repo'):
+        if repo_key in updates and not security.valid_hf_repo(updates[repo_key]):
+            return jsonify({'error': 'Érvénytelen Hugging Face repó-azonosító.'}), 400
     if 'tts_engine' in updates:
         engine = str(updates['tts_engine'] or 'omnivoice').strip().lower()
         updates['tts_engine'] = engine if engine in ('omnivoice', 'higgs') else 'omnivoice'
@@ -3529,7 +3635,9 @@ def llm_test():
     provider = str(body.get('provider') or 'local').strip().lower()
     if provider == 'openai':
         base_url = 'https://api.openai.com/v1'
-        api_key = str(body.get('api_key') or app_settings.get('openai_api_key', ''))
+        api_key = security.resolve_secret(
+            body.get('api_key'), app_settings.get('openai_api_key', '')
+        )
         selected = str(
             body.get('model') or app_settings.get('openai_model', '')
         ).strip()
@@ -3543,7 +3651,9 @@ def llm_test():
         base_url = str(
             body.get('base_url') or app_settings.get('llm_base_url', '')
         ).strip()
-        api_key = str(body.get('api_key') or app_settings.get('llm_api_key', ''))
+        api_key = security.resolve_secret(
+            body.get('api_key'), app_settings.get('llm_api_key', '')
+        )
         selected = str(
             body.get('model') or app_settings.get('llm_model', '')
         ).strip()
@@ -3583,6 +3693,8 @@ def start_download():
     repo_id = body.get('repo_id', app_settings.get('model_repo', 'k2-fsa/OmniVoice'))
     dest = body.get('dest', app_settings.get('model_path'))
     hf_endpoint = body.get('hf_endpoint', app_settings.get('hf_endpoint', ''))
+    if not security.valid_hf_repo(repo_id):
+        return jsonify({'error': 'Érvénytelen Hugging Face repó-azonosító.'}), 400
     app_settings.start_model_download(repo_id, dest, hf_endpoint)
     return jsonify({'ok': True, 'dest': dest})
 

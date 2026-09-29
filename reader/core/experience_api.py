@@ -656,9 +656,14 @@ def backup_library():
     from core.library_backup import create_backup
 
     data = body()
-    dest = (
-        Path(get_db_path()).parent / "backups" / ("auris-" + uuid.uuid4().hex + ".zip")
-    )
+    folder = Path(get_db_path()).parent / "backups"
+    # Manual backups are downloads; earlier temporary copies are not needed.
+    for old in folder.glob("auris-*.zip"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    dest = folder / ("auris-" + uuid.uuid4().hex + ".zip")
     create_backup(dest, bool(data.get("include_audio", False)))
     return send_file(dest, as_attachment=True, download_name="auris-konyvtar.zip")
 

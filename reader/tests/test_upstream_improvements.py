@@ -46,7 +46,8 @@ class StreamingExportTests(unittest.TestCase):
             self.assertEqual(info['format']['tags']['description'], 'Leírás')
             self.assertEqual(info['format']['tags']['date'], '2026')
             self.assertTrue(any(s.get('disposition', {}).get('attached_pic') for s in info['streams']))
-            self.assertAlmostEqual(float(info['chapters'][1]['start_time']), 13.85, places=2)
+            # 13.5 s of speech and pauses in chapter one, plus the chapter gap.
+            self.assertAlmostEqual(float(info['chapters'][1]['start_time']), 13.5 + exporter.CHAPTER_GAP_SEC, places=2)
             self.assertIn('00:00:07,500', Path(result['subtitle_path']).read_text(encoding='utf-8'))
             self.assertIn('M4B ellenőrzése…', stages)
             self.assertFalse(list(Path(result['audio_path']).parent.glob('.m4b-*')))

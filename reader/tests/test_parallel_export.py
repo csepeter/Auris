@@ -110,3 +110,53 @@ class ParallelExportPartitionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CancellationPropagationTest(unittest.TestCase):
+    def test_dual_pool_surfaces_real_cancellation(self):
+        from core.cancellation import GenerationAborted, SiblingAborted
+
+        class Cancelled(GenerationAborted):
+            pass
+
+        primary = _FakeExportEngine("lane-1")
+        replica = _FakeExportEngine("lane-2")
+        pool = TTSExportPool(primary, requested_workers=2)
+        pool.engines = [primary, replica]
+        calls = []
+
+        def on_item(idx, result):
+            calls.append(idx)
+            raise Cancelled("stop")
+
+        with self.assertRaises(Cancelled) as ctx:
+            pool.generate_many(_clone_items(20), num_step=16, on_item=on_item)
+        self.assertNotIsInstance(ctx.exception, SiblingAborted)
+
+    def test_engine_emit_reraises_generation_aborted(self):
+        import os
+        import tempfile
+        from unittest.mock import patch
+
+        import numpy as np
+        import soundfile as sf
+
+        from core import tts_engine
+        from core.cancellation import GenerationAborted
+
+        engine = tts_engine.TTSEngine()
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(tts_engine, "AUDIO_CACHE_DIR", tmp):
+            items = [{"text": f"Mondat {i}.", "instruct": "x"} for i in range(3)]
+            for item in items:
+                key = engine.cache_key(item["text"], tts_engine._stabilize_voice_design_instruct("x"),
+                                       None, 1.0, language=None,
+                                       normalize_text=tts_engine._normalize_text_enabled(),
+                                       num_step=16, variant=engine._render_variant)
+                sf.write(os.path.join(tmp, f"{key}.wav"), np.zeros(240), 24000)
+
+            def on_item(idx, result):
+                raise GenerationAborted("cancel")
+
+            with self.assertRaises(GenerationAborted):
+                engine.generate_many(items, num_step=16, on_item=on_item)

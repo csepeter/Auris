@@ -229,6 +229,12 @@ def pip_install(*args, no_index=False, index_url=None, extra_index_url=None):
     run(cmd)
 
 
+# Tested range. torchaudio 2.9+ changed its I/O backends; an unbounded
+# "latest" install could break OmniVoice on a future release.
+TORCH_SPEC = "torch>=2.4,<2.12"
+TORCHAUDIO_SPEC = "torchaudio>=2.4,<2.12"
+
+
 def install_torch(hw_tag):
     step("Installing PyTorch + torchaudio")
 
@@ -236,11 +242,11 @@ def install_torch(hw_tag):
         verify_torch(hw_tag)
         return
     if hw_tag == "mps":
-        pip_install("torch", "torchaudio")
+        pip_install(TORCH_SPEC, TORCHAUDIO_SPEC)
     elif hw_tag == "cpu":
         if offline_wheels_available():
             info("Local wheels found; using them before package indexes.")
-        pip_install("torch", "torchaudio")
+        pip_install(TORCH_SPEC, TORCHAUDIO_SPEC)
     else:
         index_url = f"https://download.pytorch.org/whl/{hw_tag}"
         info(f"PyTorch index: {index_url}")
@@ -261,7 +267,7 @@ def install_torch(hw_tag):
             run([
                 sys.executable, "-m", "pip", "download", "--no-deps",
                 "--index-url", index_url, "--dest", wheel_dir,
-                "torch", "torchaudio",
+                TORCH_SPEC, TORCHAUDIO_SPEC,
             ])
             wheels = sorted(Path(wheel_dir).glob("*.whl"))
             if len(wheels) != 2 or any(f"+{hw_tag}-" not in p.name for p in wheels):

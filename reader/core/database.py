@@ -9,11 +9,24 @@ def get_db_path():
     return os.path.abspath(DB_PATH)
 
 
-@contextmanager
-def get_conn():
-    conn = sqlite3.connect(get_db_path())
+# Bumped when init_db gains a migration; stored in PRAGMA user_version.
+SCHEMA_VERSION = 2
+# Writers (export progress, playback progress, backups) overlap; wait instead
+# of failing with "database is locked".
+BUSY_TIMEOUT_SEC = 30
+
+
+def connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(get_db_path(), timeout=BUSY_TIMEOUT_SEC)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    return conn
+
+
+@contextmanager
+def get_conn():
+    conn = connect()
     try:
         yield conn
         conn.commit()
@@ -26,6 +39,14 @@ def get_conn():
 
 def init_db():
     os.makedirs(os.path.dirname(get_db_path()), exist_ok=True)
+    wal = sqlite3.connect(get_db_path(), timeout=BUSY_TIMEOUT_SEC)
+    try:
+        # WAL lets readers proceed while a job writes; the mode is persistent.
+        wal.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.DatabaseError:
+        pass
+    finally:
+        wal.close()
     with get_conn() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS books (
@@ -107,7 +128,7 @@ def init_db():
             is_dialogue   INTEGER DEFAULT 0,
             audio_path    TEXT,
             duration_sec  REAL,
-            cache_key     TEXT UNIQUE,
+            cache_key     TEXT,
             unit_index    INTEGER,
             speaker_candidate INTEGER DEFAULT 0,
             ends_paragraph INTEGER DEFAULT 0
@@ -184,17 +205,28 @@ def init_db():
 
     # Remove UNIQUE constraint from tts_segments.cache_key so identical sentences
     # in different chapters don't cause INSERT OR IGNORE to silently drop segments.
-    import sqlite3 as _sqlite3
     import logging as _logging
-    _mc = _sqlite3.connect(get_db_path())
-    _mc.row_factory = _sqlite3.Row
+    _mc = connect()
     try:
         tbl = _mc.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='tts_segments'"
         ).fetchone()
         if tbl and 'UNIQUE' in (tbl['sql'] or '').upper():
-            _mc.executescript("""
+            existing = [
+                row['name'] for row in _mc.execute('PRAGMA table_info(tts_segments)')
+            ]
+            target = [
+                'id', 'book_id', 'chapter_id', 'segment_index', 'text', 'enriched_text',
+                'character_name', 'instruct', 'speed', 'is_dialogue', 'audio_path',
+                'duration_sec', 'cache_key', 'unit_index', 'speaker_candidate',
+                'ends_paragraph',
+            ]
+            # Copy every column both tables share; a fixed list silently
+            # dropped speaker units and paragraph ends on older databases.
+            shared = ', '.join(c for c in target if c in existing)
+            _mc.executescript(f"""
                 PRAGMA foreign_keys=OFF;
+                BEGIN;
                 DROP TABLE IF EXISTS tts_segments_new;
                 CREATE TABLE tts_segments_new (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,19 +246,18 @@ def init_db():
                     speaker_candidate INTEGER DEFAULT 0,
                     ends_paragraph INTEGER DEFAULT 0
                 );
-                INSERT INTO tts_segments_new
-                    (id, book_id, chapter_id, segment_index, text, enriched_text,
-                     character_name, instruct, speed, is_dialogue, audio_path,
-                     duration_sec, cache_key)
-                SELECT id, book_id, chapter_id, segment_index, text, enriched_text,
-                       character_name, instruct, speed, is_dialogue, audio_path,
-                       duration_sec, cache_key
-                FROM tts_segments;
+                INSERT INTO tts_segments_new ({shared})
+                SELECT {shared} FROM tts_segments;
                 DROP TABLE tts_segments;
                 ALTER TABLE tts_segments_new RENAME TO tts_segments;
+                COMMIT;
                 PRAGMA foreign_keys=ON;
             """)
     except Exception as _e:
+        try:
+            _mc.execute('ROLLBACK')
+        except Exception:
+            pass
         _logging.getLogger(__name__).warning(
             "cache_key UNIQUE migration failed (non-fatal): %s", _e
         )
@@ -257,3 +288,9 @@ def init_db():
 
     from core.experience import initialize
     initialize()
+
+    with get_conn() as conn:
+        conn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_segments_cache_key ON tts_segments(cache_key)'
+        )
+        conn.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')

@@ -85,7 +85,7 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
                                      't_end': cursor / e.SAMPLE_RATE})
                     pause = (e.pause_after_segment(segment, segments[si + 1])
                              if si + 1 < len(segments) else
-                             e.DEFAULT_SEGMENT_PAUSE_SEC if ci + 1 < len(chapters_data) else 0)
+                             e.CHAPTER_GAP_SEC if ci + 1 < len(chapters_data) else 0)
                     silence = round(pause * e.SAMPLE_RATE)
                     out.write(np.zeros(silence, dtype='float32'))
                     cursor += silence
@@ -143,7 +143,7 @@ def export(book_title, chapters_data, character_colors=None, *, sub_fmt='none',
         for item, (start, end, title) in zip(actual, chapters):
             if (abs(float(item['start_time']) - start / e.SAMPLE_RATE) > .02
                     or abs(float(item['end_time']) - end / e.SAMPLE_RATE) > .02
-                    or item.get('tags', {}).get('title') != title):
+                    or item.get('tags', {}).get('title') != e._ffmetadata_plain(title)):
                 raise RuntimeError('Az M4B fejezethatárai vagy címei hibásak.')
         if cover and not any(s.get('disposition', {}).get('attached_pic') for s in info['streams']):
             raise RuntimeError('A borító nem került az M4B-fájlba.')

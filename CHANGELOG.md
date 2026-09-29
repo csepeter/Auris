@@ -12,6 +12,42 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-09-29
+
+### Magyar
+
+#### Javítva
+
+- Egy szereplő vagy a narrátor referenciahangjának cseréje után a régi hang már nem kerülhet elő a cache-ből: minden feltöltés tartalom alapú, egyedi fájlnevet kap.
+- Más weboldalról érkező módosító kéréseket (CSRF) és idegen Host fejlécet az Auris elutasít; a mentett API-kulcsokat a Beállítások oldal nem küldi vissza, és a Hugging Face repóazonosítókat ellenőrzi.
+- A leállítás valóban megállítja a generálást az aktuális GPU-csomag után, két exportsáv esetén mindkét sávban.
+- Egy váratlanul kilépő feladat nem marad „Fut” állapotban, így nem blokkolja az importot, a beállításokat és a generálást az újraindításig.
+- Érvénytelen, hatástalan aluláteresztő szűrő eltávolítva a masteringből; az M4B fejezetei között 2 másodperc csend van; a sortörést tartalmazó fejezetcím nem akasztja meg az M4B ellenőrzését.
+- A fejezetenkénti ZIP-ben az azonos című fejezetek nem írják felül egymást, a hangfájlok tömörítés nélkül, gyorsabban kerülnek a csomagba.
+- A modell nem töltődhet be kétszer párhuzamosan; a Higgs worker leállítása nem keveredik egy futó generálás válaszával.
+- A beállítások beolvasási hibája nem vált át csendben az alapértékekre (és ezzel másik beszédmotorra); a beállítások gyorsítótárból olvasódnak.
+- SQLite WAL mód, 30 másodperces várakozás zárolásnál, index a hangcache-kulcson; a régi adatbázisok táblaátalakítása megőrzi az összes szegmensoszlopot.
+- A régi lezárt feladatok és a kézi mentések ideiglenes másolatai automatikusan törlődnek.
+- Letöltéskor a más meghajtón lévő útvonal 403-as választ ad 500-as hiba helyett.
+- A `run.bat` és a `run.sh` nem indul a rendszer Pythonjával, ha hiányzik a `.venv`; a telepítő tesztelt PyTorch-verziótartományt telepít.
+
+### English
+
+#### Fixed
+
+- Replacing a character or narrator reference voice can no longer return the old voice from the audio cache: every upload gets a content-addressed file name.
+- Cross-site write requests (CSRF) and foreign Host headers are rejected; saved API keys are no longer returned by the Settings API, and Hugging Face repository IDs are validated.
+- Stopping a job now halts generation after the current GPU pack, in both lanes of a two-worker export.
+- A job whose worker exits unexpectedly no longer stays "running" and blocks import, settings and generation until restart.
+- Removed an invalid, ineffective low-pass filter from mastering; M4B chapters are separated by 2 seconds of silence; a chapter title containing a line break no longer fails M4B verification.
+- Chapters with identical titles no longer overwrite each other in the per-chapter ZIP, and audio is stored without recompression.
+- The model can no longer be loaded twice concurrently; stopping the Higgs worker no longer interleaves with a running generation's reply.
+- A settings read error no longer silently falls back to defaults (and another TTS engine); settings are cached.
+- SQLite WAL mode, a 30-second lock wait, and an index on audio cache keys; the legacy table rebuild keeps every segment column.
+- Old finished jobs and temporary copies of manual backups are cleaned up automatically.
+- Downloads of paths on another drive return 403 instead of a 500 error.
+- `run.bat` and `run.sh` no longer fall back to the system Python when `.venv` is missing; setup installs a tested PyTorch version range.
+
 ## [3.4.1] - 2026-09-29
 
 ### Magyar

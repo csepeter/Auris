@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# OmniReader - Linux / macOS launcher
+# Auris - Linux / macOS launcher
 # Usage: bash run.sh
 
 set -e
 cd "$(dirname "$0")"
 
-if [ -x ".venv/bin/python" ]; then
-    PYTHON=".venv/bin/python"
-else
-    PYTHON=$(command -v python3 || command -v python)
+if [ ! -x ".venv/bin/python" ]; then
+    echo "The Auris virtual environment is missing: reader/.venv"
+    echo "Run: bash reader/setup.sh"
+    exit 1
 fi
+PYTHON=".venv/bin/python"
 
-echo "Starting OmniReader..."
+echo "Starting Auris..."
 echo "Open your browser at: http://127.0.0.1:7860"
 echo ""
 echo "Model status will appear in the top-right corner of the app."

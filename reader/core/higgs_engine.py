@@ -149,6 +149,8 @@ class HiggsTTSEngine:
         self._loading = False
         self._ready = False
         self._cancel_load = threading.Event()
+        self._load_start_lock = threading.Lock()
+        self._load_mutex = threading.Lock()
         self._error: str | None = None
         self._resolved_model = ""
         self._worker: subprocess.Popen | None = None
@@ -194,9 +196,13 @@ class HiggsTTSEngine:
         }
 
     def load_async(self) -> None:
-        if self._ready or self._loading:
-            return
-        self._cancel_load.clear()
+        # Check-and-set atomically: concurrent status polls must not start two
+        # loads (a second Higgs worker would orphan several GB of VRAM).
+        with self._load_start_lock:
+            if self._ready or self._loading:
+                return
+            self._loading = True
+            self._cancel_load.clear()
         threading.Thread(target=self._load, daemon=True).start()
 
     def load_sync(self) -> None:
@@ -206,8 +212,13 @@ class HiggsTTSEngine:
             raise RuntimeError(self._error or "Higgs TTS model failed to load")
 
     def _load(self) -> None:
+        with self._load_mutex:
+            self._load_locked()
+
+    def _load_locked(self) -> None:
         with self._lock:
             if self._ready:
+                self._loading = False
                 return
             self._loading = True
             self._error = None
@@ -282,8 +293,16 @@ class HiggsTTSEngine:
         if worker is not None:
             try:
                 if worker.poll() is None:
-                    self._rpc_raw({"command": "shutdown"})
-                    worker.wait(timeout=5)
+                    # Only one thread may read the worker's stdout; wait for
+                    # an in-flight utterance, otherwise stop the process.
+                    if self._lock.acquire(timeout=30):
+                        try:
+                            self._rpc_raw({"command": "shutdown"})
+                        finally:
+                            self._lock.release()
+                        worker.wait(timeout=5)
+                    else:
+                        worker.terminate()
             except Exception:
                 # _rpc_raw() or a concurrent load/cancel path may already have
                 # cleared self._worker. Always clean up the captured process.

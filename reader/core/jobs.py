@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 import uuid
 from typing import Any
 
@@ -23,8 +25,36 @@ _UPDATABLE = {
 }
 
 
+_ensured: set[tuple] = set()
+_ensured_lock = threading.Lock()
+
+
+def _db_identity() -> tuple:
+    path = database.get_db_path()
+    try:
+        st = os.stat(path)
+        return (path, st.st_ino, st.st_ctime_ns)
+    except OSError:
+        return (path, None, None)
+
+
 def ensure_jobs() -> None:
-    """Create job-owned tables without changing any existing job state."""
+    """Create job-owned tables without changing any existing job state.
+
+    The DDL runs once per database file; request gating calls this often.
+    """
+    identity = _db_identity()
+    if identity[1] is not None:
+        with _ensured_lock:
+            if identity in _ensured:
+                return
+    _ensure_jobs_ddl()
+    identity = _db_identity()
+    with _ensured_lock:
+        _ensured.add(identity)
+
+
+def _ensure_jobs_ddl() -> None:
     with database.get_conn() as conn:
         conn.executescript(
             """
@@ -145,6 +175,36 @@ def list_jobs(*, book_id: int | None = None) -> list[dict]:
     with database.get_conn() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [_decode(row) for row in rows]
+
+
+def list_active_jobs(*, book_id: int | None = None) -> list[dict]:
+    """Pending and running jobs only (uses the state index)."""
+    sql = (
+        "SELECT j.*, b.title AS book_title, c.title AS chapter_title "
+        "FROM jobs j LEFT JOIN books b ON b.id=j.book_id "
+        "LEFT JOIN chapters c ON c.id=j.chapter_id AND c.book_id=j.book_id "
+        "WHERE j.state IN ('pending','running')"
+    )
+    params: tuple[Any, ...] = ()
+    if book_id is not None:
+        sql += " AND j.book_id=?"
+        params = (book_id,)
+    sql += " ORDER BY j.created_at DESC, j.rowid DESC"
+    with database.get_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [_decode(row) for row in rows]
+
+
+def prune_finished_jobs(*, keep_days: int = 30, keep_last: int = 200) -> int:
+    """Delete old finished jobs beyond the newest ``keep_last`` rows."""
+    with database.get_conn() as conn:
+        cursor = conn.execute(
+            "DELETE FROM jobs WHERE state NOT IN ('pending','running') "
+            "AND updated_at < datetime('now', ?) "
+            "AND id NOT IN (SELECT id FROM jobs ORDER BY created_at DESC, rowid DESC LIMIT ?)",
+            (f'-{int(keep_days)} days', int(keep_last)),
+        )
+        return cursor.rowcount
 
 
 def update_job(job_id: str, **changes) -> dict:

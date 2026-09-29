@@ -5,10 +5,15 @@
 
 cd /d "%~dp0"
 
-set "PYTHON=python"
-if exist ".venv\Scripts\python.exe" set "PYTHON=.venv\Scripts\python.exe"
+if not exist ".venv\Scripts\python.exe" (
+    echo The Auris virtual environment is missing: reader\.venv
+    echo Run reader\setup.bat first, then start Auris again.
+    pause
+    exit /b 1
+)
+set "PYTHON=.venv\Scripts\python.exe"
 
-echo Starting OmniReader...
+echo Starting Auris...
 echo Open your browser at: http://127.0.0.1:7860
 echo.
 echo Model status will appear in the top-right corner of the app.

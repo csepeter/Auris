@@ -66,6 +66,37 @@ class VoiceReferenceApiTest(unittest.TestCase):
         self.assertIsNone(book['narrator_ref_audio_name'])
         self.assertIsNone(book['narrator_ref_text'])
 
+    def test_replacing_reference_changes_path_and_removes_old_file(self):
+        def upload(payload):
+            response = self.client.post(
+                '/api/characters/2/ref-audio',
+                data={'file': (io.BytesIO(payload), 'alice.wav'), 'ref_text': 'Same words.'},
+                content_type='multipart/form-data',
+            )
+            self.assertEqual(response.status_code, 200)
+            with database.get_conn() as conn:
+                return conn.execute('SELECT ref_audio_path FROM characters WHERE id=2').fetchone()[0]
+
+        first = upload(b'RIFF-first-voice')
+        second = upload(b'RIFF-second-voice')
+        # Cache keys include the reference path, so a new voice needs a new path.
+        self.assertNotEqual(first, second)
+        self.assertFalse(os.path.exists(first))
+        self.assertTrue(os.path.exists(second))
+        self.assertEqual(upload(b'RIFF-second-voice'), second)
+
+        narrator = []
+        for payload in (b'RIFF-n1', b'RIFF-n2'):
+            self.client.post(
+                '/api/books/1/narrator-ref-audio',
+                data={'file': (io.BytesIO(payload), 'n.wav'), 'ref_text': 'x'},
+                content_type='multipart/form-data',
+            )
+            with database.get_conn() as conn:
+                narrator.append(conn.execute('SELECT narrator_ref_audio_path FROM books WHERE id=1').fetchone()[0])
+        self.assertNotEqual(narrator[0], narrator[1])
+        self.assertFalse(os.path.exists(narrator[0]))
+
     def test_character_upload_and_api_return_filename_and_transcript(self):
         response = self.client.post(
             '/api/characters/2/ref-audio',

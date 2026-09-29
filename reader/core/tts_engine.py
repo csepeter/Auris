@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from core.cancellation import GenerationAborted, SiblingAborted
 from core.hungarian_numbers import looks_hungarian, normalize_hungarian
 
 log = logging.getLogger(__name__)
@@ -599,6 +600,8 @@ class TTSEngine:
         self._loading = False
         self._ready = False
         self._cancel_load = threading.Event()
+        self._load_start_lock = threading.Lock()
+        self._load_mutex = threading.Lock()
         self._error: str | None = None
         self._prompt_mem: dict[str, object] = {}
         # After CUDA OOM, never retry larger packs in this process (avoids
@@ -643,10 +646,14 @@ class TTSEngine:
             "model_exists": os.path.isdir(resolved_path),
         }
 
-    def load_async(self):
-        if self._ready or self._loading:
-            return
-        self._cancel_load.clear()
+    def load_async(self) -> None:
+        # Check-and-set atomically: concurrent status polls must not start two
+        # loads (a second Higgs worker would orphan several GB of VRAM).
+        with self._load_start_lock:
+            if self._ready or self._loading:
+                return
+            self._loading = True
+            self._cancel_load.clear()
         threading.Thread(target=self._load, daemon=True).start()
 
     def load_sync(self) -> None:
@@ -733,9 +740,14 @@ class TTSEngine:
             size = min(size, self._batch_size_cap)
         return max(1, size)
 
-    def _load(self):
+    def _load(self) -> None:
+        with self._load_mutex:
+            self._load_locked()
+
+    def _load_locked(self) -> None:
         with self._lock:
             if self._ready:
+                self._loading = False
                 return
             self._loading = True
             self._error = None
@@ -1372,6 +1384,8 @@ class TTSEngine:
             if on_item is not None:
                 try:
                     on_item(idx, result)
+                except GenerationAborted:
+                    raise
                 except Exception as exc:
                     log.warning("generate_many on_item callback failed: %s", exc)
 
@@ -1706,6 +1720,7 @@ class TTSExportPool:
 
         lanes = _partition_export_items(items, 2)
         outputs: list[dict | None] = [None] * len(items)
+        aborted = threading.Event()
 
         def run_lane(lane_no: int) -> None:
             engine = self.engines[lane_no]
@@ -1715,8 +1730,14 @@ class TTSExportPool:
             def lane_item(local_i: int, result: dict) -> None:
                 original_i = lane[local_i][0]
                 outputs[original_i] = result
+                if aborted.is_set():
+                    raise SiblingAborted("sibling export lane aborted")
                 if on_item is not None:
-                    on_item(original_i, result)
+                    try:
+                        on_item(original_i, result)
+                    except GenerationAborted:
+                        aborted.set()
+                        raise
 
             def lane_status(message: str) -> None:
                 if on_status is not None:
@@ -1739,8 +1760,20 @@ class TTSExportPool:
         )
         with ThreadPoolExecutor(max_workers=2, thread_name_prefix="tts-export") as executor:
             futures = [executor.submit(run_lane, lane_no) for lane_no in range(2)]
+            first_error: BaseException | None = None
             for future in futures:
-                future.result()
+                try:
+                    future.result()
+                except BaseException as exc:
+                    aborted.set()
+                    # Prefer the real cause over the sibling lane's echo.
+                    if first_error is None or (
+                        isinstance(first_error, SiblingAborted)
+                        and not isinstance(exc, SiblingAborted)
+                    ):
+                        first_error = exc
+            if first_error is not None:
+                raise first_error
 
         missing = [i for i, result in enumerate(outputs) if result is None]
         if missing:
