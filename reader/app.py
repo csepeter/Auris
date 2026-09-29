@@ -846,6 +846,30 @@ def _selected_llm_config(config: dict | None = None) -> dict:
     }
 
 
+def _character_detection_for_import(llm_config: dict) -> tuple[str | None, str | None]:
+    """Pick the character-analysis path for a character-voices import.
+
+    A configured language model is used as before. With no local model name set
+    (the factory state), the local HuSpaCy/spaCy detection runs instead (no LLM,
+    nothing leaves the machine). A model name without a server address, or an
+    explicitly chosen OpenAI provider without key/model, still returns an error
+    so a broken setting is never silently replaced by the simpler method.
+    Returns ``(mode, error)``.
+    """
+    if llm_config['provider'] == 'openai':
+        if not llm_config['api_key']:
+            return None, 'Az OpenAI-alapú szereplőfelismeréshez előbb add meg az OpenAI API-kulcsot.'
+        if not llm_config['model']:
+            return None, 'A szereplőhangokhoz előbb válassz nyelvi modellt a Beállításokban.'
+        return 'llm', None
+    if not llm_config['model']:
+        # The factory setup has a local server address but no model name.
+        return 'legacy', None
+    if not llm_config['base_url']:
+        return None, 'A szereplőhangokhoz előbb add meg a helyi nyelvi modell címét a Beállításokban.'
+    return 'llm', None
+
+
 @app.route('/api/books/import', methods=['POST'])
 def import_book():
     if 'file' not in request.files:
@@ -861,7 +885,7 @@ def import_book():
             'error': 'Ez egy régi .doc fájl. Nyisd meg Wordben, és mentsd .docx formátumban.'
         }), 400
     if ext not in ('epub', 'pdf', 'docx', 'txt', 'prc', 'mobi'):
-        return jsonify({'error': f'Unsupported format: {ext}'}), 400
+        return jsonify({'error': f'Nem támogatott formátum: {ext}'}), 400
 
     detection_config = app_settings.load()
     llm_config = _selected_llm_config(detection_config)
@@ -870,20 +894,10 @@ def import_book():
         detection_mode = 'none'
         single_narrator_mode = True
     elif requested_mode == 'multi':
-        detection_mode = 'llm'
+        detection_mode, detection_error = _character_detection_for_import(llm_config)
         single_narrator_mode = False
-        if not llm_config['base_url']:
-            return jsonify({
-                'error': 'A szereplőhangokhoz előbb add meg a helyi nyelvi modell címét a Beállításokban.'
-            }), 400
-        if llm_config['provider'] == 'openai' and not llm_config['api_key']:
-            return jsonify({
-                'error': 'Az OpenAI-alapú szereplőfelismeréshez előbb add meg az OpenAI API-kulcsot.'
-            }), 400
-        if not llm_config['model']:
-            return jsonify({
-                'error': 'A szereplőhangokhoz előbb válassz nyelvi modellt a Beállításokban.'
-            }), 400
+        if detection_error:
+            return jsonify({'error': detection_error}), 400
     else:
         # Backwards compatibility for API clients that predate the import dialog.
         detection_mode = str(
@@ -910,7 +924,7 @@ def import_book():
             data = txt_parser.parse(dest)
     except Exception as e:
         _delete_file_if_exists(dest)
-        return jsonify({'error': f'Parse error: {e}'}), 500
+        return jsonify({'error': f'A fájl feldolgozása nem sikerült: {e}'}), 500
 
     from core.parser.structure import attach_blocks
     from core.text_cleanup import clean_parsed_book
@@ -970,7 +984,7 @@ def import_book():
         _set_character_analysis_status(
             book_id,
             'skipped',
-            'Single narrator selected — character analysis skipped.',
+            'Egy narrátor van kiválasztva, szereplőelemzés nélkül.',
         )
     else:
         # The durable record is committed before its worker thread can start.
@@ -1027,7 +1041,8 @@ def _detect_characters(
                 full_text, top_n=20, language=data.get('language')
             )
             _store_character_analysis(
-                book_id, chars, [], 'complete', 'Legacy detection complete.'
+                book_id, chars, [], 'complete',
+                f'A szereplőfelismerés kész (nyelvi modell nélkül): {len(chars)} szereplő.'
             )
             analysis_job.update(
                 state='complete', done=len(data.get('chapters') or []),
@@ -1035,7 +1050,7 @@ def _detect_characters(
             )
             _persist_job(analysis_job)
         except JobCancelled:
-            jobs.mark_cancelled(job_id, 'Character analysis cancelled')
+            jobs.mark_cancelled(job_id, 'A szereplőelemzés leállítva')
         except Exception as exc:
             _set_character_analysis_status(book_id, 'failed', str(exc))
             analysis_job.update(state='failed', error=str(exc), message='Az elemzés nem sikerült')
@@ -1056,8 +1071,8 @@ def _detect_characters(
             _set_character_analysis_status(
                 book_id,
                 'running',
-                'Connecting to the local language model…'
-                if uses_local_llm else 'Connecting to OpenAI…',
+                'Kapcsolódás a helyi nyelvi modellhez…'
+                if uses_local_llm else 'Kapcsolódás az OpenAI-hoz…',
             )
             with get_conn() as conn:
                 rows = conn.execute(
@@ -1072,11 +1087,11 @@ def _detect_characters(
                 _set_character_analysis_status(
                     book_id,
                     'running',
-                    f'Analyzing chapter {current}/{total}: {chapter_title}',
+                    f'Fejezet elemzése ({current}/{total}): {chapter_title}',
                 )
                 analysis_job.update(
                     done=max(0, current - 1), total=total,
-                    message=f'Analyzing chapter {current}/{total}: {chapter_title}',
+                    message=f'Fejezet elemzése ({current}/{total}): {chapter_title}',
                 )
                 _persist_job(analysis_job)
 
@@ -1097,12 +1112,13 @@ def _detect_characters(
             failed_batches = len(result.get('errors') or [])
             final_status = 'partial' if failed_batches else 'complete'
             message = (
-                f"{'Partial' if failed_batches else 'Complete'}: "
-                f"{len(result['characters'])} characters and "
-                f"{len(result['annotations'])} attributed dialogue units."
+                f"{'Részben kész' if failed_batches else 'Kész'}: "
+                f"{len(result['characters'])} szereplő, "
+                f"{len(result['annotations'])} beszélőhöz rendelt párbeszédrész."
             )
             if failed_batches:
-                message += f" {failed_batches} chapter batch(es) failed; see server log."
+                message += (f" {failed_batches} fejezetcsomag elemzése nem sikerült; "
+                            "a részletek a szervernaplóban.")
             _store_character_analysis(
                 book_id,
                 result['characters'],

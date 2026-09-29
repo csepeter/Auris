@@ -5,6 +5,7 @@ const {
   hashString,
   coverSpec,
   llmConfigured,
+  characterDetectionPath,
   bookStats,
   activeJobsByBook,
 } = require('../static/js/library.js');
@@ -138,4 +139,13 @@ test('progress, downloads and actions follow the job state', () => {
   assert.deepEqual(jobActions({ state: 'running', cancel_requested: true }), { cancel: false, resume: false });
   assert.deepEqual(jobActions({ state: 'interrupted' }), { cancel: false, resume: true });
   assert.deepEqual(jobActions({ state: 'complete' }), { cancel: false, resume: false });
+});
+
+test('character voices fall back to local HuSpaCy only when no model is set up', () => {
+  assert.equal(characterDetectionPath(null), null);
+  assert.equal(characterDetectionPath({ llm_provider: 'local', llm_base_url: '', llm_model: '' }), 'local');
+  assert.equal(characterDetectionPath({ llm_provider: 'local', llm_base_url: 'http://127.0.0.1:1234/v1', llm_model: '' }), 'local');
+  assert.equal(characterDetectionPath({ llm_provider: 'local', llm_base_url: 'http://127.0.0.1:1234/v1', llm_model: 'qwen' }), 'llm');
+  assert.equal(characterDetectionPath({ llm_provider: 'local', llm_base_url: '', llm_model: 'qwen' }), 'misconfigured');
+  assert.equal(characterDetectionPath({ llm_provider: 'openai', openai_api_key: '', openai_model: 'gpt' }), 'misconfigured');
 });

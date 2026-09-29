@@ -12,6 +12,30 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-09-29
+
+### Magyar
+
+#### Hozzáadva
+
+- A **Szereplőhangok** import nyelvi modell nélkül is működik: ilyenkor a gépen futó HuSpaCy ismeri fel a szereplőket, és a párbeszédeket szabályok rendelik hozzájuk. Nyelvi modell beállításakor a modelles elemzés fut, mint eddig; félkész beállításnál továbbra is hibaüzenet jelzi a hiányzó adatot.
+
+#### Javítva
+
+- A magyar névfelismerés nem ragasztja a mondat eleji szót a névhez („Délre Péter” → „Péter”, „Reggel Anna” → „Anna”); a vezetéknevek („Kovács Anna”) megmaradnak.
+- A szereplőelemzés állapotüzenetei és néhány importhibaüzenet angolul maradt („Connecting to…”, „Analyzing chapter…”, „Partial: …”, „Unsupported format”); most magyarok.
+
+### English
+
+#### Added
+
+- **Character voices** import also works without a language model: the local HuSpaCy detection finds the characters and rules assign dialogue to them. With a model configured the model-based analysis runs as before; a half-finished model setup still reports the missing value.
+
+#### Fixed
+
+- Hungarian name detection no longer glues a sentence-initial word onto a name ("Délre Péter" → "Péter", "Reggel Anna" → "Anna"); surnames ("Kovács Anna") are kept.
+- Character-analysis status messages and some import errors were still English ("Connecting to…", "Analyzing chapter…", "Partial: …", "Unsupported format"); they are Hungarian now.
+
 ## [4.2.1] - 2026-09-29
 
 ### Magyar

@@ -60,8 +60,29 @@ class BookImportModesTest(unittest.TestCase):
         self.assertEqual(book["character_analysis_provider"], "none")
         self.assertEqual(book["character_analysis_status"], "skipped")
 
-    def test_character_voices_require_configured_model(self):
-        app_settings.save({"llm_base_url": "", "llm_model": ""})
+    def test_character_voices_without_model_use_local_detection(self):
+        app_settings.save({"llm_base_url": "http://127.0.0.1:1234/v1", "llm_model": ""})
+        with patch.object(app_module.threading, "Thread") as thread:
+            response = self.client.post(
+                "/api/books/import",
+                data={
+                    "file": (self._book_file(), "multi.txt"),
+                    "narration_mode": "multi",
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        thread.assert_called_once()
+        with database.get_conn() as conn:
+            book = conn.execute("SELECT * FROM books").fetchone()
+        self.assertEqual(book["single_narrator_mode"], 0)
+        self.assertEqual(book["character_analysis_provider"], "legacy")
+        analysis_jobs = jobs.list_jobs(book_id=book["id"])
+        self.assertEqual(analysis_jobs[0]["input"]["mode"], "legacy")
+
+    def test_half_configured_model_is_still_an_error(self):
+        app_settings.save({"llm_base_url": "", "llm_model": "qwen"})
         response = self.client.post(
             "/api/books/import",
             data={

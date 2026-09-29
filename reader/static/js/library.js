@@ -43,6 +43,19 @@ function llmConfigured(settings) {
   return Boolean(String(settings.llm_base_url || "").trim()) && Boolean(String(settings.llm_model || "").trim());
 }
 
+// Which character analysis a "Szereplőhangok" import runs (mirrors the server):
+// "llm" with a configured model, "local" (HuSpaCy/spaCy) when no local model
+// name is set (the factory state), "misconfigured" for a model name without a
+// server address or OpenAI without key/model; null = unknown.
+function characterDetectionPath(settings) {
+  if (!settings || typeof settings !== "object") return null;
+  if (llmConfigured(settings)) return "llm";
+  const provider = String(settings.llm_provider || "local").trim().toLowerCase();
+  if (provider === "openai") return "misconfigured";
+  const model = String(settings.llm_model || "").trim();
+  return model ? "misconfigured" : "local";
+}
+
 // Reading and audio progress of a book from its /api/books/<id>/chapters rows.
 function bookStats(book, chapters) {
   const list = Array.isArray(chapters) ? chapters : [];
@@ -103,7 +116,7 @@ const LIBRARY_JOB_LABELS = {
 };
 
 if (typeof module === "object" && module.exports) {
-  module.exports = { hashString, coverSpec, llmConfigured, bookStats, activeJobsByBook };
+  module.exports = { hashString, coverSpec, llmConfigured, characterDetectionPath, bookStats, activeJobsByBook };
 }
 
 /* ── Page state ───────────────────────────────────────────────────────────── */
@@ -508,9 +521,9 @@ async function showImportPreview(data) {
 
 // Character voices need a configured language model; say so before submit.
 function updateMultiAvailability() {
-  const ready = llmConfigured(importSettings);
+  const path = characterDetectionPath(importSettings);
   const input = document.querySelector('[name="narration-mode"][value="multi"]');
-  const unavailable = ready === false;
+  const unavailable = path === "misconfigured";
   input.disabled = unavailable;
   input.closest(".narration-option").classList.toggle("is-disabled", unavailable);
   $("multi-unavailable").hidden = !unavailable;
@@ -522,9 +535,11 @@ function updateImportNote() {
   const multi = document.querySelector('[name="narration-mode"]:checked').value === "multi";
   $("import-model-note").textContent = !multi
     ? "Helyi felolvasás, nyelvimodell-hívás nélkül."
-    : importSettings?.llm_provider === "openai"
-      ? "OpenAI-elemzés: a könyv szövege az OpenAI szolgáltatásához kerül. Ez API-költséggel jár."
-      : "A szereplőelemzés a beállított helyi nyelvi modellt használja. A felolvasásra az elemzés után kerülhet sor.";
+    : characterDetectionPath(importSettings) === "local"
+      ? "Nyelvi modell nincs beállítva: a szereplőket a gépen futó HuSpaCy ismeri fel, a beszélőket szabályok rendelik a párbeszédekhez. Nyelvi modellel pontosabb."
+      : importSettings?.llm_provider === "openai"
+        ? "OpenAI-elemzés: a könyv szövege az OpenAI szolgáltatásához kerül. Ez API-költséggel jár."
+        : "A szereplőelemzés a beállított helyi nyelvi modellt használja. A felolvasásra az elemzés után kerülhet sor.";
 }
 
 function updateConfirmState() {

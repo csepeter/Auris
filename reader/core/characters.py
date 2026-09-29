@@ -347,6 +347,33 @@ _HU_STOP = {
 }
 
 
+# A sentence-initial word HuSpaCy glues onto a name ("Délre Péter", "Reggel
+# Anna"): an inflected common word or a time adverb is never a surname.
+_HU_LEADING_SUFFIXES = (
+    'ban', 'ben', 'ból', 'ből', 'nál', 'nél', 'tól', 'től', 'hoz', 'hez', 'höz',
+    'val', 'vel', 'kor', 'ért', 'ról', 'ről', 'nak', 'nek', 're', 'ra', 'ba', 'be',
+)
+_HU_LEADING_ADVERBS = {
+    'Reggel', 'Este', 'Tegnap', 'Ma', 'Holnap', 'Akkor', 'Aztán', 'Majd', 'Közben',
+    'Ekkor', 'Később', 'Délután', 'Éjjel', 'Hirtelen', 'Végül', 'Csak', 'Még', 'Már',
+    'Most', 'Pedig', 'Talán', 'Persze', 'Nos',
+}
+
+
+def _strip_leading_non_name(name: str) -> str:
+    parts = name.split()
+    while len(parts) > 1:
+        head = parts[0]
+        lower = head.lower()
+        inflected = any(lower.endswith(sfx) and len(lower) - len(sfx) >= 3
+                        for sfx in _HU_LEADING_SUFFIXES)
+        if head in _HU_LEADING_ADVERBS or inflected:
+            parts = parts[1:]
+        else:
+            break
+    return ' '.join(parts)
+
+
 def _hungarian_base_name(name: str, known: set) -> str:
     """Map an inflected name ("Annának", "Péterrel") to a known base form."""
     head, _, last = name.rpartition(' ')
@@ -378,7 +405,7 @@ def extract_characters_hungarian(text: str, top_n: int = 20) -> list[dict]:
             doc = nlp(text[i:i + chunk_size])
             for ent in doc.ents:
                 if ent.label_ in ('PER', 'PERSON') and len(ent.text.split()) <= 3:
-                    name = ent.text.strip(' .,;:!?–—-"„”»«')
+                    name = _strip_leading_non_name(ent.text.strip(' .,;:!?–—-"„”»«'))
                     if len(name) > 1 and name[0].isupper():
                         counter[name] += 1
     for match in _HU_NAME_RE.finditer(text):

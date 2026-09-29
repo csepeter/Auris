@@ -23,6 +23,14 @@ class HungarianCharacterDetectionTest(unittest.TestCase):
         self.assertEqual(characters._hungarian_base_name('Péterrel', known), 'Péter')
         self.assertEqual(characters._hungarian_base_name('Pécs', known), 'Pécs')
 
+    def test_sentence_initial_words_are_not_glued_to_names(self):
+        strip = characters._strip_leading_non_name
+        self.assertEqual(strip('Délre Péter'), 'Péter')
+        self.assertEqual(strip('Reggel Anna'), 'Anna')
+        self.assertEqual(strip('Városban Kiss Béla'), 'Kiss Béla')
+        for surname_first in ('Kovács Anna', 'Nagy Imre', 'Tót Pál', 'Szabó J. Éva'):
+            self.assertEqual(strip(surname_first), surname_first)
+
     def test_regex_fallback_finds_attributed_speakers(self):
         with patch.object(characters, '_get_hungarian_nlp', return_value=None):
             names = [c['name'] for c in characters.extract_characters_hungarian(self.TEXT)]

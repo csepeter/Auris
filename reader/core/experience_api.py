@@ -352,14 +352,12 @@ def confirm_import():
             raise ValueError("Válassz narrációs módot.")
         config = settings.load()
         llm = application._selected_llm_config(config)
-        if mode == "multi" and (
-            not llm["base_url"]
-            or not llm["model"]
-            or (llm["provider"] == "openai" and not llm["api_key"])
-        ):
-            raise ValueError(
-                "A szereplőhangokhoz állíts be nyelvi modellt a Beállítások oldalon."
-            )
+        detection = None
+        if mode == "multi":
+            # No model configured at all → local HuSpaCy/spaCy detection.
+            detection, detection_error = application._character_detection_for_import(llm)
+            if detection_error:
+                raise ValueError(detection_error)
         with get_conn() as conn:
             existing = conn.execute(
                 "SELECT id,title FROM books WHERE content_hash=?",
@@ -389,8 +387,9 @@ def confirm_import():
                         int(mode == "single"),
                         len(chapters),
                         "skipped" if mode == "single" else "queued",
-                        "none" if mode == "single" else "llm",
-                        "single narrator" if mode == "single" else llm["model"],
+                        "none" if mode == "single" else detection,
+                        "single narrator" if mode == "single"
+                        else llm["model"] if detection == "llm" else "HuSpaCy/spaCy",
                         parsed.get("source_url", ""),
                         parsed["content_hash"],
                     ),
@@ -418,7 +417,8 @@ def confirm_import():
         staged.unlink(missing_ok=True)
     if mode == "multi":
         application._detect_characters(
-            bid, {"title": title, "author": author, "chapters": chapters}, "llm", config
+            bid, {"title": title, "author": author, "chapters": chapters, "language": language},
+            detection, config,
         )
     return jsonify(
         book_id=bid,
