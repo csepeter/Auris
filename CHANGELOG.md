@@ -12,6 +12,18 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+### Magyar
+
+#### Hozzáadva
+
+- Windowson a Supertonic 3 és a Parakeet beszédfelismerő DirectML-lel bármilyen DirectX 12-es videokártyán fut (`onnxruntime-directml`). RX 6600-on a Supertonic kb. ötször, a Parakeet kb. 3,7-szer gyorsabb, mint processzoron (i7-13700K). Ha a DirectML nem indul el, a motor processzoron fut; Python 3.10-zel a processzoros onnxruntime marad. A Windows asztali telepítő is a DirectML-es változatot csomagolja, így ott is külön GPU-telepítés nélkül használja a videokártyát. A Beállítások → Beszédmotor alatt visszaállítható a processzor. A MOSS-TTS-Nano processzoron marad, mert ott gyorsabb.
+
+### English
+
+#### Added
+
+- On Windows, Supertonic 3 and the Parakeet speech recognizer run on any DirectX 12 GPU through DirectML (`onnxruntime-directml`). On an RX 6600 Supertonic is about five times and Parakeet about 3.7 times faster than on the CPU (i7-13700K). If DirectML cannot start, the engine runs on the CPU; Python 3.10 keeps the CPU onnxruntime. The Windows desktop installer bundles the DirectML build too, so it uses the GPU without a separate GPU download. Settings → Speech engine can switch them back to the CPU. MOSS-TTS-Nano stays on the CPU, where it is faster.
+
 ## [4.4.0] - 2026-10-01
 
 ### Magyar
