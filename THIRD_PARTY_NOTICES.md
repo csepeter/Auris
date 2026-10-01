@@ -1,5 +1,43 @@
 # Third-party notices
 
+## Windows desktop distribution
+
+The Windows installer is an aggregate of Auris and separately licensed runtime
+components. Python is distributed under the PSF license; pywebview under the
+BSD-3-Clause license; pythonnet under MIT. Runtime package metadata and license
+files are preserved in `runtime/Lib/site-packages`; the exact package versions
+are recorded in `runtime-manifest.json`.
+
+- CPython binary/source: https://www.python.org/downloads/release/python-3119/
+- pywebview source: https://github.com/r0x0r/pywebview
+- pythonnet source: https://github.com/pythonnet/pythonnet
+- PyTorch source and notices: https://github.com/pytorch/pytorch
+- Microsoft WebView2 is a separately installed Microsoft runtime:
+  https://developer.microsoft.com/microsoft-edge/webview2/
+
+Microsoft C++ runtime DLLs retain their Microsoft licenses and copyrights.
+CPython provides `vcruntime140.dll` and `vcruntime140_1.dll`; the NumPy wheel
+provides the Microsoft-signed `msvcp140.dll`, also placed beside the interpreter
+under its original filename so that Torch can load on a fresh Windows system.
+https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
+
+FFmpeg and ffprobe are separate command-line programs from the Gyan Windows
+essentials build, licensed under GPL-3.0. Their license and build information
+are included under `tools/`. This distribution does not change Auris's MIT
+license. Build/source information is available at
+https://www.gyan.dev/ffmpeg/builds/ and https://ffmpeg.org/download.html .
+The selected build version and source commit are recorded in the desktop
+release's source notices. Voice model weights are downloaded at runtime and
+retain their model-specific licenses listed below; they are not embedded in
+the installer.
+
+## OmniVoice
+
+The OmniVoice package code is licensed under Apache-2.0. Its pretrained model
+weights are licensed under CC-BY-NC, as stated in the publisher's model card:
+https://huggingface.co/k2-fsa/OmniVoice#license . Model weights are downloaded
+on the user's first run and are not included in the Windows installer.
+
 ## LocalText2Voice
 
 Parts of Auris text preparation and audiobook export behavior are derived from

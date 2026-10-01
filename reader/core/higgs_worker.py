@@ -15,6 +15,14 @@ import sys
 import threading
 import traceback
 
+# Embedded Python ignores PYTHONPATH. Select the same isolated runtime explicitly.
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core.desktop_support import activate_gpu_runtime
+activate_gpu_runtime()
+if os.environ.get('AURIS_HIGGS_RUNTIME'):
+    sys.path.insert(0, os.environ['AURIS_HIGGS_RUNTIME'])
+
 
 PREFIX = "AURIS_HIGGS_JSON:"
 _REPLY_LOCK = threading.Lock()

@@ -9,18 +9,19 @@ import os
 import sys
 import threading
 from pathlib import Path
+from core.paths import user_path, omnivoice_model, higgs_model
 
 # reader/ directory
 _APP_DIR   = Path(__file__).resolve().parent.parent
 # E:\Ebook-Reader\ (or equivalent on other platforms)
 _REPO_ROOT = _APP_DIR.parent
 
-SETTINGS_FILE = _APP_DIR / 'data' / 'settings.json'
+SETTINGS_FILE = user_path('data', 'settings.json')
 _settings_write_lock = threading.RLock()
 
 # Default model path = <repo_root>/model_backup/OmniVoice
-_DEFAULT_MODEL_PATH = str(_REPO_ROOT / 'model_backup' / 'OmniVoice')
-_DEFAULT_HIGGS_MODEL_PATH = str(_REPO_ROOT / 'model_backup' / 'Higgs-TTS-3-4B')
+_DEFAULT_MODEL_PATH = str(omnivoice_model())
+_DEFAULT_HIGGS_MODEL_PATH = str(higgs_model())
 LEGACY_NARRATOR_INSTRUCT = 'female, middle-aged, moderate pitch, american accent'
 # Foreign accents in the voice description pull Hungarian stress and vowels
 # towards English, so the default narrator carries no accent.
@@ -369,10 +370,11 @@ def install_spacy_model(language: str = 'en') -> dict:
     import tempfile
     import urllib.request
 
-    python = sys.executable
+    from core.desktop_support import python_command
+    python = python_command()
     if language != 'hu':
         result = subprocess.run(
-            [python, '-m', 'spacy', 'download', 'en_core_web_sm'],
+            [*python, '-m', 'spacy', 'download', 'en_core_web_sm'],
             capture_output=True, text=True
         )
         if result.returncode == 0:
@@ -389,7 +391,7 @@ def install_spacy_model(language: str = 'en') -> dict:
         except Exception as exc:
             return {'ok': False, 'message': f'A HuSpaCy letöltése nem sikerült: {exc}'}
         result = subprocess.run(
-            [python, '-m', 'pip', 'install', str(wheel)],
+            [*python, '-m', 'pip', 'install', str(wheel)],
             capture_output=True, text=True,
         )
     if result.returncode == 0:

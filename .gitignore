@@ -62,6 +62,7 @@ reader/data/llm_eval_*
 # ── Downloaded engine models (Piper, Supertonic, MOSS-TTS-Nano) ──────────────
 reader/models/
 docker-data/
+/build-*.log
 
 # Local video productions and agent skills (contain the owner's voice sample)
 .agents/

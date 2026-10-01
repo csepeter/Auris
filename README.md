@@ -93,7 +93,27 @@ labels and the updated workflows described below and in the built-in help.
 - Inspect generated audio-cache usage and remove old files that no book references.
 - Run from a project-local `.venv` created by the installer.
 
-## Requirements
+## Windows x64 alkalmazás / desktop application
+
+A [GitHub Releases](https://github.com/mp3pintyo/Auris/releases/latest) oldalról
+letölthető `Auris-Setup-<verzió>-x64.exe` telepítővel **Git és külön Python-telepítés
+nélkül** használhatod az Aurist Windows 10/11 x64 rendszeren. Az Auris saját
+ablakban nyílik meg; első indításkor magyar beállítófelület tölti le a választott
+Supertonic CPU- vagy OmniVoice-modellt. A megfelelő NVIDIA-kártyához az
+OmniVoice GPU-gyorsítása is automatikusan telepíthető. Az első modellletöltéshez
+internet kell; a már telepített motorok felolvasása helyben fut.
+
+A könyvek és modellek a `%LOCALAPPDATA%\Auris` mappában maradnak meg frissítés
+után is. A Python-környezet, a CPU-függőségek és az FFmpeg/ffprobe a csomag része.
+[Telepítés, frissítés és hibaelhárítás](docs/windows-desktop.md).
+
+The Windows x64 installer bundles Python, CPU dependencies and FFmpeg/ffprobe.
+No Git or separate Python installation is required. First-run setup downloads
+the selected voice model and can install an optional NVIDIA runtime for
+OmniVoice. User data and downloaded models survive application updates.
+The existing source-based web installation remains available below.
+
+## Requirements (source-based web installation)
 
 - Python 3.10 or later
 - `ffmpeg` on `PATH` for MP3, M4B, and export mastering

@@ -390,7 +390,8 @@ def install_triton(python: str | None = None) -> dict:
     except ValueError as exc:
         return {"ok": False, "message": str(exc)}
     for args in commands:
-        result = subprocess.run([python or sys.executable, "-m", "pip", "install", *args],
+        from core.desktop_support import python_command
+        result = subprocess.run([*python_command(python), "-m", "pip", "install", *args],
                                 capture_output=True, text=True)
         if result.returncode:
             return {"ok": False, "message": (result.stderr or result.stdout)[-600:]}

@@ -297,8 +297,9 @@ def engine_install():
     engine = str(body.get('engine') or '')
     if engine not in packages:
         return jsonify({'ok': False, 'message': 'Ismeretlen motor.'}), 400
+    from core.desktop_support import python_command
     result = subprocess.run(
-        [sys.executable, '-m', 'pip', 'install', *packages[engine]],
+        [*python_command(), '-m', 'pip', 'install', *packages[engine]],
         capture_output=True, text=True,
     )
     if result.returncode:

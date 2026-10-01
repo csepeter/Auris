@@ -198,3 +198,36 @@ Do not move a published tag or rewrite a released source state. If a release
 contains an error, create a fix commit and a new patch version. For a failed or
 interrupted workflow, correct the Actions failure first and rerun the same tag;
 the release workflow is idempotent.
+
+## Windows x64 mellékletek / Windows x64 attachments
+
+A Windows-kiadás a tesztelt projektkörnyezetből készül:
+
+```powershell
+reader\.venv\Scripts\python.exe scripts\windows\build.py
+```
+
+A build után ellenőrizd a telepített, izolált futtatókörnyezetet, a valódi
+felolvasást, a kezdeti beállítást és az adatmegőrzést. A helyi Playwright-próba
+képernyőképet és üres konzolhibalistát adjon. Lásd a
+[Windows-útmutatót](docs/windows-desktop.md) és az első kiadás
+[ellenőrzési jegyzőkönyvét](docs/windows-desktop-qa.md).
+
+Miután a tag workflow-ja létrehozta a Release-t, töltsd fel a `dist/windows`
+mappából a verzióhoz tartozó telepítőt, runtime-manifesztet,
+`FFmpeg-9.0.2-source.zip` forrásarchívumot és `SHA256SUMS.txt` fájlt:
+
+```powershell
+gh release upload vX.Y.Z dist/windows/Auris-Setup-X.Y.Z-x64.exe dist/windows/Auris-X.Y.Z-runtime-manifest.json dist/windows/FFmpeg-9.0.2-source.zip dist/windows/SHA256SUMS.txt
+```
+
+Ellenőrizd a közzétett mellékletek méretét, SHA256-értékét és letöltési linkjét.
+A kiadott binárisokat ne cseréld le; változás esetén új patch kiadás készül.
+
+Build the Windows installer from the tested project environment, then verify
+the installed isolated runtime, real speech, first-run setup and retained user
+data. Local Playwright checks must include screenshots and an empty console
+error list. After the tag workflow creates the Release, upload the installer,
+runtime manifest, corresponding FFmpeg source archive and SHA256 checksums
+using the command above. Verify published asset sizes, hashes and download
+links. Changed binaries require a new patch release.

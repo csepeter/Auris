@@ -2,7 +2,9 @@ import sqlite3
 import os
 from contextlib import contextmanager
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'reader.db')
+from core.paths import user_path
+
+DB_PATH = str(user_path('data', 'reader.db'))
 
 
 def get_db_path():

@@ -7,6 +7,7 @@
       <div class="docs-toc-label">Tartalom</div>
       <nav class="docs-toc">
         <a href="#overview" class="active">Áttekintés</a>
+        <a href="#windows-desktop">Windows x64 alkalmazás</a>
         <a href="#auris">Auris funkciók</a>
         <a href="#workflow">Munkafolyamat</a>
         <a href="#production">Produkció és felület</a>
@@ -89,6 +90,27 @@
           <strong>Motorváltás után a beszédmotort újra kell tölteni.</strong>
           <p>Az Auris előbb leállítja és felszabadítja az előző motort, majd külön környezetben betölti a kiválasztottat.</p>
         </div>
+      </div>
+    </section>
+
+    <section class="docs-section" id="windows-desktop">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">W</span>
+        <div><h2>Windows x64: telepítés és első indítás</h2><p>Asztali alkalmazás Git és külön Python-telepítés nélkül.</p></div>
+      </div>
+      <div class="docs-prose">
+      <p>A <a href="https://github.com/mp3pintyo/Auris/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Release</a> oldalról töltsd le az <code>Auris-Setup-&lt;verzió&gt;-x64.exe</code> telepítőt. Windows 10/11 x64 rendszeren használható; saját Python-környezetet és FFmpeg/ffprobe programokat tartalmaz. Git és külön Python-telepítés nem szükséges.</p>
+      <ol class="docs-steps">
+        <li>Indítsd a telepítőt, majd nyisd meg az Aurist az asztali vagy Start menüben létrehozott ikonnal.</li>
+        <li>Az első ablakban válaszd a <strong>Gyors indulás</strong> (Supertonic 3, CPU, kb. 0,4 GB) vagy a <strong>Saját hangok és hangklónozás</strong> (OmniVoice, több GB) lehetőséget.</li>
+        <li>Kattints a <strong>Letöltés és beállítás</strong> gombra. Az első modellletöltéshez internetkapcsolat és elegendő szabad tárhely kell; az állapot az ablakban követhető.</li>
+        <li>Kész beállítás után nyisd meg a könyvtárat. Az OmniVoice-hoz választható NVIDIA-gyorsítás telepítése után az <strong>Auris újraindítása</strong> gomb aktiválja a GPU-környezetet.</li>
+      </ol>
+      <p>A kezdeti beállítás felismeri az NVIDIA-kártyát. A GPU-telepítéshez CUDA 12.8-at vagy újabb verziót támogató illesztőprogram szükséges; a gyorsítás további több GB-os letöltés. Az illesztőprogramot külön kell frissíteni. A Supertonic CPU-n fut, az OmniVoice CPU-val lassabban is használható. A hiányzó Microsoft WebView2 alkalmazásablakot a telepítő internetkapcsolattal állítja be.</p>
+      <h3>Adatmegőrzés és frissítés</h3>
+      <p>A programfájlok alaphelye <code>%LOCALAPPDATA%\Programs\Auris</code>. A könyvek, beállítások, modellek és exportok a külön <code>%LOCALAPPDATA%\Auris</code> mappában maradnak. Frissítéshez zárd be az Aurist és futtasd az új telepítőt; a felhasználói adatok megmaradnak. Az eltávolító is megtartja ezt az adatmappát. A forrásból indított webes Auris továbbra is használható, külön könyvtárral; könyveidet Auris ZIP-mentéssel viheted át.</p>
+      <p>Az ablak bezárása leállítja a helyi szervert és a háttérfeladatokat. Megszakadt modellletöltésnél újraindíthatod a beállítást. Hiba esetén a <code>%LOCALAPPDATA%\Auris\logs</code> mappában keresd a naplókat. OCR-hez a Tesseract és a magyar nyelvi adat, speciális könyvformátumokhoz a Calibre továbbra is opcionális, külön telepítendő eszköz.</p>
+      {% if desktop_mode %}<p><a class="btn btn-secondary" href="/desktop/setup">Asztali kezdeti beállítás megnyitása</a></p>{% endif %}
       </div>
     </section>
 

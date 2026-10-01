@@ -34,7 +34,9 @@ from core import sfx
 log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24_000
-EXPORTS_DIR = str(Path(__file__).resolve().parent.parent / 'exports')
+from core.paths import user_path
+
+EXPORTS_DIR = str(user_path('exports'))
 os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 DEFAULT_SEGMENT_PAUSE_SEC = 0.35

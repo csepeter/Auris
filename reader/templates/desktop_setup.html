@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auris – Első indítás</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/desktop.css">
+</head>
+<body>
+  <main class="setup-shell">
+    <header class="setup-header"><a href="/" class="setup-brand">Auris<span>hangoskönyv</span></a><span class="platform-label">Windows x64</span></header>
+    <section class="setup-card">
+      <p class="eyebrow">Üdv az Aurisban</p>
+      <h1>A könyveidnek<br>most hangot adunk.</h1>
+      <p class="intro">Válassz egy beszédmotort. Letöltjük és beállítjuk a szükséges modellt, utána a felolvasás helyben, a számítógépeden fut.</p>
+      <form id="setup-form">
+        <fieldset>
+          <legend>Hogyan szeretnél kezdeni?</legend>
+          <label class="engine-choice"><input type="radio" name="engine" value="supertonic" checked><span><strong>Gyors indulás</strong><span class="choice-detail">Supertonic 3 · magyar női és férfihangok · CPU</span><span class="choice-note">Kisebb, kb. 0,4 GB-os letöltés. Videokártya nélkül is használható.</span></span><span class="choice-tag">Ajánlott</span></label>
+          <label class="engine-choice"><input type="radio" name="engine" value="omnivoice"><span><strong>Saját hangok és hangklónozás</strong><span class="choice-detail">OmniVoice · több szereplő, egyedi hangok</span><span class="choice-note">Több GB-os modell. CPU-n lassabb; megfelelő NVIDIA-kártyával gyorsítható.</span></span></label>
+        </fieldset>
+        <div class="hardware-panel">
+          {% if hardware.gpu_supported %}
+          <p><span class="status-dot"></span>Elérhető NVIDIA-kártya: <strong>{{ hardware.nvidia }}</strong></p>
+          <label class="gpu-option"><input id="gpu" type="checkbox" disabled> NVIDIA-gyorsítás telepítése az OmniVoice-hoz</label>
+          <p class="small">További több GB-os letöltés. A szükséges összetevőket az Auris automatikusan telepíti.</p>
+          {% elif hardware.nvidia %}
+          <p>Felismert kártya: <strong>{{ hardware.nvidia }}</strong></p>
+          <p class="small">CPU-val elindíthatod az Aurist. NVIDIA-gyorsításhoz előbb frissítsd az illesztőprogramot (CUDA 12.8 támogatás), majd nyisd meg újra ezt a beállítást.</p>
+          {% else %}
+          <p><span class="status-dot"></span>A CPU-s felolvasás rendelkezésre áll.</p>
+          {% endif %}
+        </div>
+        <p class="license-note">A Supertonic modell az <a href="https://huggingface.co/supertone-oss-archive/supertonic-3/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">OpenRAIL-M</a> licenc feltételeivel használható. Az <a href="https://huggingface.co/k2-fsa/OmniVoice#license" target="_blank" rel="noopener noreferrer">OmniVoice</a> kódja Apache-2.0, modellsúlyai CC-BY-NC licencűek (nem kereskedelmi felhasználás). Az első letöltéshez internetkapcsolat szükséges.</p>
+        <button id="start" class="primary-button" type="submit">Letöltés és beállítás</button>
+      </form>
+      <div id="setup-progress" class="progress-panel" hidden aria-live="polite">
+        <p id="progress-message">Előkészítés…</p>
+        <progress id="progress-bar" max="100" value="0" aria-label="Kezdeti beállítás"></progress>
+        <p id="progress-detail" class="small"></p>
+      </div>
+      <div id="setup-error" class="error-panel" role="alert" hidden></div>
+      <div id="setup-done" class="done-panel" {% if not complete %}hidden{% endif %}>
+        <p>A beállítás elkészült. Kezdődhet a felolvasás.</p>
+        <a id="open-library" class="primary-button" href="/">Könyvtár megnyitása</a>
+        <button id="restart" class="primary-button" type="button" hidden>Auris újraindítása</button>
+      </div>
+      <details class="storage-note"><summary>Adatok és hibaelhárítás</summary><p>A könyvek, modellek és exportok itt maradnak meg frissítés után is:</p><code>{{ data_dir }}</code><p>Hiba esetén a <code>logs</code> almappában találod a naplókat. A félbehagyott modellletöltést újraindíthatod; a már letöltött fájlokat újra felhasználjuk.</p></details>
+      <footer><a href="/">Könyvtár</a><a href="/docs#windows-desktop">Telepítési súgó</a><span>Később a Beállításokban motort válthatsz.</span></footer>
+    </section>
+  </main>
+  <script src="/static/js/desktop_setup.js"></script>
+</body>
+</html>

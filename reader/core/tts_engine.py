@@ -26,7 +26,9 @@ from core.hungarian_numbers import looks_hungarian, normalize_hungarian
 
 log = logging.getLogger(__name__)
 
-AUDIO_CACHE_DIR = str(Path(__file__).resolve().parent.parent / "audio_cache")
+from core.paths import user_path, omnivoice_model
+
+AUDIO_CACHE_DIR = str(user_path('audio_cache'))
 VOICE_REF_DIR = os.path.join(AUDIO_CACHE_DIR, "voice_refs")
 VOICE_PROMPT_DIR = os.path.join(AUDIO_CACHE_DIR, "voice_prompts")
 SAMPLE_RATE = 24_000
@@ -97,7 +99,7 @@ def _model_path_from_settings() -> str:
 
         return get("model_path") or ""
     except Exception:
-        return str(Path(__file__).resolve().parent.parent.parent / "model_backup" / "OmniVoice")
+        return str(omnivoice_model())
 
 
 def _normalize_text_enabled() -> bool:

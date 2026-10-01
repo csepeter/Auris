@@ -39,7 +39,9 @@ from core.tts_engine import (
 log = logging.getLogger(__name__)
 
 APP_DIR = Path(__file__).resolve().parent.parent
-MODELS_DIR = APP_DIR / "models"
+from core.paths import user_path
+
+MODELS_DIR = user_path('models')
 VENDOR_DIR = Path(__file__).resolve().parent / "vendor"
 
 # Capability matrix shown in Settings and used to adapt Voice Studio/reader.
@@ -691,8 +693,9 @@ class MossTTSEngine(LocalEngineBase):
 
         worker_path = Path(__file__).with_name("moss_worker.py")
         self._detail = "MOSS-TTS betöltése (első indításkor ~17,6 GB letöltés)…"
+        from core.desktop_support import python_command
         self._worker = subprocess.Popen(
-            [sys.executable, "-u", str(worker_path)], stdin=subprocess.PIPE,
+            [*python_command(), "-u", str(worker_path)], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=None, text=True, encoding="utf-8",
         )
         response = self._rpc({

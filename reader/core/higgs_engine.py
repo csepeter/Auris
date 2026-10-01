@@ -246,9 +246,11 @@ class HiggsTTSEngine:
             env = os.environ.copy()
             existing = env.get("PYTHONPATH", "")
             env["PYTHONPATH"] = str(runtime) + (os.pathsep + existing if existing else "")
+            env['AURIS_HIGGS_RUNTIME'] = str(runtime)
             worker_path = Path(__file__).with_name("higgs_worker.py")
+            from core.desktop_support import python_command
             self._worker = subprocess.Popen(
-                [sys.executable, "-u", str(worker_path)],
+                [*python_command(), "-u", str(worker_path)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=None,

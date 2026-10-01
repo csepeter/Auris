@@ -64,9 +64,12 @@ def _inject_i18n():
         theme = 'night'
     # The saved theme is the first-paint default on every page, so a new
     # browser does not start light on some pages and dark on the reader.
-    return {'i18n': _i18n_cache['data'], 'ui_theme': theme}
+    return {'i18n': _i18n_cache['data'], 'ui_theme': theme,
+            'desktop_mode': 'desktop.setup_page' in app.view_functions}
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
+from core.paths import user_path
+
+UPLOAD_DIR = str(user_path('uploads'))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 tts = TTSEngineRouter()

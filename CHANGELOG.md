@@ -12,6 +12,32 @@ represent a new product generation or an incompatible change.
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-01
+
+### Magyar
+
+#### Hozzáadva
+
+- Első Windows 10/11 x64 asztali telepítő saját alkalmazásablakkal, mellékelt Python-környezettel, CPU-függőségekkel és FFmpeg/ffprobe programokkal. Git és külön Python-telepítés nem szükséges; a webes változat továbbra is használható.
+- Magyar első indítási beállítás Supertonic 3 vagy OmniVoice modellletöltéssel, állapotjelzéssel és az OmniVoice-hoz választható NVIDIA-gyorsítás telepítésével.
+- A könyvek, beállítások, modellek, hangok és exportok külön felhasználói adatmappában maradnak meg frissítés és eltávolítás után. Egy adatmappát egyszerre egy asztali példány kezelhet.
+
+#### Kiadási folyamat
+
+- Windows buildeszközök, telepítési útmutató, futtatókörnyezet-manifeszt és SHA256-ellenőrzőösszeg a GitHub Release telepítőmellékletéhez.
+
+### English
+
+#### Added
+
+- First Windows 10/11 x64 desktop installer with its own application window, bundled Python runtime, CPU dependencies and FFmpeg/ffprobe. Git and a separate Python installation are not required; the web version remains available.
+- Hungarian first-run setup with Supertonic 3 or OmniVoice model downloads, progress reporting and optional NVIDIA acceleration installation for OmniVoice.
+- Books, settings, models, audio and exports use a separate per-user data directory retained across updates and uninstall. Only one desktop instance can own a data directory.
+
+#### Release process
+
+- Windows build tooling, installation guide, runtime manifest and SHA256 checksums for the GitHub Release installer attachment.
+
 ## [4.3.5] - 2026-09-29
 
 ### Magyar
